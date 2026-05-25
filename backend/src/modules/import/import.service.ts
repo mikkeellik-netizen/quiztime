@@ -81,7 +81,6 @@ export class ImportService {
       ws.getCell(r, 3).dataValidation = {
         type: 'list',
         allowBlank: true,
-        showDropDown: false,
         formulae: ['"ОДИН,НЕСКОЛЬКО,ДА-НЕТ"'],
       };
     }
@@ -91,7 +90,7 @@ export class ImportService {
     ws.addRow(['Разминка', 'Земля вращается вокруг Солнца?', 'ДА-НЕТ', '', '', '', '', 'ДА', '20', '100', '']);
     ws.addRow(['Финал', 'Выбери страны Скандинавии:', 'НЕСКОЛЬКО', 'Норвегия', 'Швеция', 'Германия', 'Дания', '1,2,4', '45', '300', '']);
 
-    return wb.xlsx.writeBuffer() as Promise<Buffer>;
+    return wb.xlsx.writeBuffer() as unknown as Promise<Buffer>;
   }
 
   generateTxtTemplate(): string {
