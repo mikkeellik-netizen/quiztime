@@ -1,0 +1,203 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Пользователи ──────────────────────────────────────────────────
+model User {
+  id          String   @id @default(uuid())
+  telegramId  BigInt   @unique @map("telegram_id")
+  username    String?
+  displayName String   @map("display_name")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  quizzes      Quiz[]
+  sessions     GameSession[]
+  participants GameParticipant[]
+
+  @@map("users")
+}
+
+// ── Викторины ─────────────────────────────────────────────────────
+model Quiz {
+  id          String     @id @default(uuid())
+  hostUserId  String     @map("host_user_id")
+  host        User       @relation(fields: [hostUserId], references: [id])
+  title       String
+  description String?
+  mode        QuizMode   @default(MULTIPLAYER)
+  status      QuizStatus @default(DRAFT)
+  settings    Json       @default("{}")
+  rounds      Round[]
+  sessions    GameSession[]
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  @@map("quizzes")
+}
+
+enum QuizMode   { MULTIPLAYER TEAM }
+enum QuizStatus { DRAFT READY ARCHIVE }
+
+// ── Раунды ────────────────────────────────────────────────────────
+model Round {
+  id         String     @id @default(uuid())
+  quizId     String     @map("quiz_id")
+  quiz       Quiz       @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  title      String
+  orderIndex Int        @map("order_index")
+  isFinal    Boolean    @default(false) @map("is_final")
+  settings   Json       @default("{}")
+  questions  Question[]
+
+  @@map("rounds")
+}
+
+// ── Вопросы ───────────────────────────────────────────────────────
+model Question {
+  id          String       @id @default(uuid())
+  roundId     String       @map("round_id")
+  round       Round        @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  type        QuestionType
+  text        String
+  timerSec    Int          @default(30) @map("timer_sec")
+  baseScore   Int          @default(200) @map("base_score")
+  orderIndex  Int          @map("order_index")
+  explanation String?
+  options     AnswerOption[]
+  answers     ParticipantAnswer[]
+
+  @@map("questions")
+}
+
+enum QuestionType { SINGLE MULTI TRUE_FALSE }
+
+// ── Варианты ответов ──────────────────────────────────────────────
+model AnswerOption {
+  id         String    @id @default(uuid())
+  questionId String    @map("question_id")
+  question   Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean   @map("is_correct")
+  orderIndex Int       @map("order_index")
+
+  selectedIn ParticipantAnswer[] @relation("SelectedOptions")
+
+  @@map("answer_options")
+}
+
+// ── Игровые сессии ────────────────────────────────────────────────
+model GameSession {
+  id         String            @id @default(uuid())
+  quizId     String            @map("quiz_id")
+  quiz       Quiz              @relation(fields: [quizId], references: [id])
+  hostUserId String            @map("host_user_id")
+  host       User              @relation(fields: [hostUserId], references: [id])
+  code       String            @unique
+  status     GameSessionStatus @default(WAITING)
+  mode       QuizMode          @default(MULTIPLAYER)
+
+  autoFlowMode       String   @default("MANUAL")     @map("auto_flow_mode")
+  showAnswerSec      Int      @default(5)             @map("show_answer_sec")
+  showLeaderboardSec Int      @default(5)             @map("show_leaderboard_sec")
+  maxHostWaitMin     Int      @default(5)             @map("max_host_wait_min")
+
+  currentQuestionId  String?  @map("current_question_id")
+  questionStartedAt  DateTime? @map("question_started_at")
+  questionExpiresAt  DateTime? @map("question_expires_at")
+  hostDisconnectedAt DateTime? @map("host_disconnected_at")
+
+  startedAt  DateTime? @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+
+  participants  GameParticipant[]
+  teams         Team[]
+  snapshots     LeaderboardSnapshot[]
+
+  @@map("game_sessions")
+}
+
+enum GameSessionStatus {
+  WAITING
+  ACTIVE
+  QUESTION_ACTIVE
+  SHOWING_ANSWER
+  SHOWING_LEADERBOARD
+  HOST_DISCONNECTED
+  PAUSED
+  FINISHED
+  CANCELLED
+}
+
+// ── Команды ───────────────────────────────────────────────────────
+model Team {
+  id        String      @id @default(uuid())
+  sessionId String      @map("session_id")
+  session   GameSession @relation(fields: [sessionId], references: [id])
+  name      String
+  color     String      @default("#3b82f6")
+  score     Int         @default(0)
+  participants GameParticipant[]
+
+  @@map("teams")
+}
+
+// ── Участники ─────────────────────────────────────────────────────
+model GameParticipant {
+  id        String      @id @default(uuid())
+  sessionId String      @map("session_id")
+  session   GameSession @relation(fields: [sessionId], references: [id])
+  userId    String?     @map("user_id")
+  user      User?       @relation(fields: [userId], references: [id])
+  teamId    String?     @map("team_id")
+  team      Team?       @relation(fields: [teamId], references: [id])
+
+  displayName     String  @map("display_name")
+  score           Int     @default(0)
+  correctCount    Int     @default(0) @map("correct_count")
+  avgAnswerMs     Int     @default(0) @map("avg_answer_ms")
+  reconnectToken  String  @unique @map("reconnect_token")
+  isDisconnected  Boolean @default(false) @map("is_disconnected")
+  lastSeenAt      DateTime @default(now()) @map("last_seen_at")
+  socketId        String?  @map("socket_id")
+
+  answers ParticipantAnswer[]
+
+  @@unique([sessionId, displayName])
+  @@map("game_participants")
+}
+
+// ── Ответы участников ─────────────────────────────────────────────
+model ParticipantAnswer {
+  id            String          @id @default(uuid())
+  participantId String          @map("participant_id")
+  participant   GameParticipant @relation(fields: [participantId], references: [id])
+  questionId    String          @map("question_id")
+  question      Question        @relation(fields: [questionId], references: [id])
+
+  selectedOptions AnswerOption[] @relation("SelectedOptions")
+  isCorrect       Boolean
+  scoreEarned     Int            @map("score_earned")
+  answeredAtMs    BigInt         @map("answered_at_ms")
+  timeTakenMs     Int            @map("time_taken_ms")
+
+  @@unique([participantId, questionId])
+  @@map("participant_answers")
+}
+
+// ── Снапшоты лидерборда ───────────────────────────────────────────
+model LeaderboardSnapshot {
+  id         String      @id @default(uuid())
+  sessionId  String      @map("session_id")
+  session    GameSession @relation(fields: [sessionId], references: [id])
+  questionId String      @map("question_id")
+  snapshot   Json
+  createdAt  DateTime    @default(now()) @map("created_at")
+
+  @@map("leaderboard_snapshots")
+}
