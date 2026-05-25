@@ -41,8 +41,15 @@ model Quiz {
   @@map("quizzes")
 }
 
-enum QuizMode   { MULTIPLAYER TEAM }
-enum QuizStatus { DRAFT READY ARCHIVE }
+enum QuizMode {
+  MULTIPLAYER
+  TEAM
+}
+enum QuizStatus {
+  DRAFT
+  READY
+  ARCHIVE
+}
 
 // ── Раунды ────────────────────────────────────────────────────────
 model Round {
@@ -75,7 +82,11 @@ model Question {
   @@map("questions")
 }
 
-enum QuestionType { SINGLE MULTI TRUE_FALSE }
+enum QuestionType {
+  SINGLE
+  MULTI
+  TRUE_FALSE
+}
 
 // ── Варианты ответов ──────────────────────────────────────────────
 model AnswerOption {
