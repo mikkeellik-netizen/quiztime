@@ -19,7 +19,9 @@ export default function QuestionPage() {
   } = useGameStore()
 
   const [answered, setAnswered] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [localScore, setLocalScore] = useState(0)
+  const [localSpeedBonus, setLocalSpeedBonus] = useState(0)
   const [localCorrect, setLocalCorrect] = useState<boolean | null>(null)
 
   const secondsLeft = useServerTimer(
@@ -29,22 +31,29 @@ export default function QuestionPage() {
   const totalSec = currentQuestion?.timerSec ?? 30
   const progress = totalSec > 0 ? secondsLeft / totalSec : 0
 
+  const isMulti = currentQuestion?.type === 'MULTI'
+  const isTrueFalse = currentQuestion?.type === 'TRUE_FALSE'
+
+  // Reset per question
   useEffect(() => {
     setAnswered(false)
+    setSelectedIds([])
     setLocalScore(0)
+    setLocalSpeedBonus(0)
     setLocalCorrect(null)
   }, [currentQuestion?.id])
 
   useEffect(() => {
     const socket = getSocket()
 
-    socket.on('answer_result', (data: { isCorrect: boolean; scoreEarned: number }) => {
+    socket.on('answer_result', (data: { isCorrect: boolean; scoreEarned: number; speedBonus: number }) => {
       setLocalScore(data.scoreEarned)
+      setLocalSpeedBonus(data.speedBonus ?? 0)
       setLocalCorrect(data.isCorrect)
     })
 
-    socket.on('show_answer', (data: { correctOptionIds: string[] }) => {
-      setCorrectAnswer(data.correctOptionIds ?? [], localScore)
+    socket.on('show_answer', (data: { correctOptionIds: string[]; explanation?: string | null }) => {
+      setCorrectAnswer(data.correctOptionIds ?? [], localScore, data.explanation ?? null)
       setPhase('show_answer')
     })
 
@@ -68,7 +77,9 @@ export default function QuestionPage() {
         roundName: data.roundName ?? '',
       })
       setAnswered(false)
+      setSelectedIds([])
       setLocalScore(0)
+      setLocalSpeedBonus(0)
       setLocalCorrect(null)
     })
 
@@ -86,96 +97,176 @@ export default function QuestionPage() {
     }
   }, [localScore])
 
-  const handleAnswer = (optionId: string) => {
+  // SINGLE / TRUE_FALSE: instant submit on click
+  const handleSingleAnswer = (optionId: string) => {
     if (answered) return
     setAnswered(true)
     setMyAnswer([optionId])
     getSocket().emit('submit_answer', { optionIds: [optionId] })
   }
 
+  // MULTI: toggle selection
+  const toggleOption = (optionId: string) => {
+    if (answered) return
+    setSelectedIds((prev) =>
+      prev.includes(optionId) ? prev.filter((id) => id !== optionId) : [...prev, optionId],
+    )
+  }
+
+  // MULTI: confirm button
+  const confirmMultiAnswer = () => {
+    if (answered || selectedIds.length === 0) return
+    setAnswered(true)
+    setMyAnswer(selectedIds)
+    getSocket().emit('submit_answer', { optionIds: selectedIds })
+  }
+
   if (!currentQuestion) return null
 
-  const isTrueFalse = currentQuestion.type === 'TRUE_FALSE'
+  // Timer color
+  const timerColor =
+    secondsLeft <= 5
+      ? 'text-red-400 animate-pulse'
+      : secondsLeft <= 10
+      ? 'text-orange-400'
+      : 'text-white'
+
+  // Progress bar color
+  const barColor =
+    secondsLeft <= 5 ? '#ef4444' : secondsLeft <= 10 ? '#f59e0b' : '#7c6ded'
 
   return (
     <div className="flex flex-col min-h-screen px-4 py-6">
-      <div className="flex items-center justify-between mb-4">
+      {/* Header: progress + timer */}
+      <div className="flex items-center justify-between mb-3">
         <span className="text-[#5a6b8a] text-sm">
           {currentQuestion.roundName && `${currentQuestion.roundName} · `}
           Вопрос {currentQuestion.index}/{currentQuestion.total}
         </span>
-        <span className={`text-lg font-bold ${secondsLeft <= 5 ? 'text-red-400 animate-pulse' : 'text-white'}`}>
-          {secondsLeft}с
-        </span>
+        <span className={`text-lg font-bold ${timerColor}`}>{secondsLeft}с</span>
       </div>
 
-      <div className="h-1.5 rounded-full bg-white/10 mb-6">
+      <div className="h-1.5 rounded-full bg-white/10 mb-5">
         <div
-          className="h-full rounded-full bg-[#7c6ded] transition-all duration-200"
-          style={{ width: `${progress * 100}%` }}
+          className="h-full rounded-full transition-all duration-200"
+          style={{ width: `${progress * 100}%`, background: barColor }}
         />
       </div>
 
-      <div className="flex-1 flex flex-col">
-        <div className="bg-[#141e33] rounded-2xl px-5 py-6 mb-6">
-          <p className="text-white text-lg font-semibold leading-relaxed text-center">
-            {currentQuestion.text}
+      {/* Question text */}
+      <div className="bg-[#141e33] rounded-2xl px-5 py-6 mb-5">
+        <p className="text-white text-lg font-semibold leading-relaxed text-center">
+          {currentQuestion.text}
+        </p>
+        {isMulti && !answered && (
+          <p className="text-[#5a6b8a] text-xs text-center mt-2">
+            Выбери все правильные варианты, затем нажми «Подтвердить»
           </p>
-        </div>
-
-        <div className={`grid gap-3 ${isTrueFalse ? 'grid-cols-2' : 'grid-cols-1'}`}>
-          {isTrueFalse ? (
-            [
-              { id: currentQuestion.options[0]?.id ?? 'true', text: '✅ ДА' },
-              { id: currentQuestion.options[1]?.id ?? 'false', text: '❌ НЕТ' },
-            ].map((opt, i) => (
-              <button
-                key={opt.id}
-                onClick={() => handleAnswer(opt.id)}
-                disabled={answered}
-                className="py-6 rounded-2xl text-white font-bold text-xl transition disabled:opacity-60"
-                style={{ background: COLORS[i] }}
-              >
-                {opt.text}
-              </button>
-            ))
-          ) : (
-            currentQuestion.options.map((opt, i) => {
-              const isSelected = myAnswerIds.includes(opt.id)
-              return (
-                <button
-                  key={opt.id}
-                  onClick={() => handleAnswer(opt.id)}
-                  disabled={answered}
-                  className="flex items-center gap-3 px-4 py-4 rounded-2xl text-white font-medium text-left transition disabled:opacity-60"
-                  style={{
-                    background: isSelected ? COLORS[i % COLORS.length] : '#141e33',
-                    border: `2px solid ${isSelected ? COLORS[i % COLORS.length] : 'rgba(255,255,255,0.08)'}`,
-                  }}
-                >
-                  <span className="text-xl">{SHAPES[i % SHAPES.length]}</span>
-                  <span>{opt.text}</span>
-                </button>
-              )
-            })
-          )}
-        </div>
-
-        {answered && (
-          <div className="mt-6 text-center">
-            {localCorrect !== null ? (
-              <p className={`text-lg font-bold ${localCorrect ? 'text-green-400' : 'text-red-400'}`}>
-                {localCorrect ? '✓ Правильно!' : '✗ Неправильно'}
-                {localCorrect && localScore > 0 && (
-                  <span className="text-[#7c6ded] ml-2">+{localScore}</span>
-                )}
-              </p>
-            ) : (
-              <p className="text-[#5a6b8a]">Ответ принят! Ждём остальных...</p>
-            )}
-          </div>
         )}
       </div>
+
+      {/* Options */}
+      {isTrueFalse ? (
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {[
+            { id: currentQuestion.options[0]?.id ?? 'true', text: '✅ ДА' },
+            { id: currentQuestion.options[1]?.id ?? 'false', text: '❌ НЕТ' },
+          ].map((opt, i) => (
+            <button
+              key={opt.id}
+              onClick={() => handleSingleAnswer(opt.id)}
+              disabled={answered}
+              className="py-6 rounded-2xl text-white font-bold text-xl transition disabled:opacity-60"
+              style={{ background: COLORS[i] }}
+            >
+              {opt.text}
+            </button>
+          ))}
+        </div>
+      ) : isMulti ? (
+        <div className="space-y-2 mb-4 flex-1">
+          {currentQuestion.options.map((opt, i) => {
+            const isSelected = selectedIds.includes(opt.id)
+            return (
+              <button
+                key={opt.id}
+                onClick={() => toggleOption(opt.id)}
+                disabled={answered}
+                className="w-full flex items-center gap-3 px-4 py-4 rounded-2xl text-white font-medium text-left transition disabled:opacity-60"
+                style={{
+                  background: isSelected ? COLORS[i % COLORS.length] + '33' : '#141e33',
+                  border: `2px solid ${isSelected ? COLORS[i % COLORS.length] : 'rgba(255,255,255,0.08)'}`,
+                }}
+              >
+                <span
+                  className="w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition"
+                  style={{
+                    borderColor: isSelected ? COLORS[i % COLORS.length] : 'rgba(255,255,255,0.3)',
+                    background: isSelected ? COLORS[i % COLORS.length] : 'transparent',
+                  }}
+                >
+                  {isSelected && <span className="text-white text-xs">✓</span>}
+                </span>
+                <span className="text-xl">{SHAPES[i % SHAPES.length]}</span>
+                <span>{opt.text}</span>
+              </button>
+            )
+          })}
+          {!answered && (
+            <button
+              onClick={confirmMultiAnswer}
+              disabled={selectedIds.length === 0}
+              className="w-full py-3 mt-2 rounded-2xl bg-[#7c6ded] hover:bg-[#6a5bd4] text-white font-bold transition disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ✓ Подтвердить выбор ({selectedIds.length})
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2 flex-1">
+          {currentQuestion.options.map((opt, i) => {
+            const isSelected = myAnswerIds.includes(opt.id)
+            return (
+              <button
+                key={opt.id}
+                onClick={() => handleSingleAnswer(opt.id)}
+                disabled={answered}
+                className="w-full flex items-center gap-3 px-4 py-4 rounded-2xl text-white font-medium text-left transition disabled:opacity-60"
+                style={{
+                  background: isSelected ? COLORS[i % COLORS.length] : '#141e33',
+                  border: `2px solid ${isSelected ? COLORS[i % COLORS.length] : 'rgba(255,255,255,0.08)'}`,
+                }}
+              >
+                <span className="text-xl">{SHAPES[i % SHAPES.length]}</span>
+                <span>{opt.text}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Feedback after answering */}
+      {answered && (
+        <div className="mt-4 text-center">
+          {localCorrect !== null ? (
+            <div>
+              <p className={`text-lg font-bold ${localCorrect ? 'text-green-400' : 'text-red-400'}`}>
+                {localCorrect ? '✓ Правильно!' : '✗ Неправильно'}
+              </p>
+              {localScore > 0 && (
+                <p className="text-[#7c6ded] font-bold mt-1">
+                  +{localScore} очков
+                  {localSpeedBonus > 0 && (
+                    <span className="text-[#22d3ee] text-sm ml-2">(+{localSpeedBonus} за скорость)</span>
+                  )}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-[#5a6b8a]">Ответ принят! Ждём остальных...</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

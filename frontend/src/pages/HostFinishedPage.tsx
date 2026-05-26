@@ -2,6 +2,32 @@ import { useHostStore } from '../store/hostStore'
 import { useGameStore } from '../store/gameStore'
 import { disconnectSocket } from '../socket/socket'
 
+const CONFETTI_COLORS = ['#7c6ded', '#22d3ee', '#84cc16', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4']
+
+function Confetti() {
+  return (
+    <div className="fixed inset-0 pointer-events-none overflow-hidden z-10">
+      {Array.from({ length: 70 }).map((_, i) => (
+        <div
+          key={i}
+          className="confetti-particle absolute"
+          style={{
+            left: `${(i * 1.43) % 100}%`,
+            top: 0,
+            width: `${6 + (i % 6) * 2}px`,
+            height: `${6 + (i % 6) * 2}px`,
+            background: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+            borderRadius: i % 3 === 0 ? '50%' : i % 3 === 1 ? '2px' : '0',
+            animationDelay: `${(i % 12) * 0.18}s`,
+            animationDuration: `${2.2 + (i % 5) * 0.35}s`,
+            transform: `rotate(${i * 37}deg)`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
 export default function HostFinishedPage() {
   const { leaderboard, quizTitle, reset: resetHost } = useHostStore()
   const setGamePhase = useGameStore((s) => s.setPhase)
@@ -15,8 +41,10 @@ export default function HostFinishedPage() {
   const medals = ['🥇', '🥈', '🥉']
 
   return (
-    <div className="min-h-screen px-4 py-6">
-      <div className="max-w-lg mx-auto">
+    <div className="relative min-h-screen px-4 py-6">
+      <Confetti />
+
+      <div className="relative z-20 max-w-lg mx-auto">
         <div className="text-center mb-8">
           <div className="text-5xl mb-3">🏆</div>
           <h1 className="text-3xl font-bold text-white">Игра завершена!</h1>

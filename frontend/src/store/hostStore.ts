@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type HostPhase = 'idle' | 'dashboard' | 'lobby' | 'game' | 'finished'
+export type HostPhase = 'idle' | 'dashboard' | 'lobby' | 'game' | 'finished' | 'analytics'
 export type HostGamePhase = 'waiting' | 'question' | 'show_answer' | 'show_leaderboard' | 'finished'
 
 export interface Quiz {
@@ -43,6 +43,7 @@ interface HostState {
   totalQuestions: number
   correctOptionIds: string[]
   answerCount: number
+  currentExplanation: string | null
   leaderboard: LeaderboardEntry[]
 
   setPhase: (phase: HostPhase) => void
@@ -52,7 +53,7 @@ interface HostState {
   setGame: (code: string, title: string) => void
   addParticipant: (displayName: string, count: number) => void
   setCurrentQuestion: (q: HostQuestion, index: number, total: number) => void
-  setShowAnswer: (correctIds: string[], answerCount: number, participantCount: number) => void
+  setShowAnswer: (correctIds: string[], answerCount: number, participantCount: number, explanation?: string | null) => void
   setLeaderboard: (lb: LeaderboardEntry[]) => void
   reset: () => void
 }
@@ -71,6 +72,7 @@ export const useHostStore = create<HostState>((set) => ({
   totalQuestions: 0,
   correctOptionIds: [],
   answerCount: 0,
+  currentExplanation: null,
   leaderboard: [],
 
   setPhase: (phase) => set({ phase }),
@@ -82,8 +84,8 @@ export const useHostStore = create<HostState>((set) => ({
     set((s) => ({ participantList: [...s.participantList, displayName], participantCount: count })),
   setCurrentQuestion: (currentQuestion, questionIndex, totalQuestions) =>
     set({ currentQuestion, questionIndex, totalQuestions, correctOptionIds: [], answerCount: 0, gamePhase: 'question' }),
-  setShowAnswer: (correctOptionIds, answerCount, participantCount) =>
-    set({ correctOptionIds, answerCount, participantCount, gamePhase: 'show_answer' }),
+  setShowAnswer: (correctOptionIds, answerCount, participantCount, explanation = null) =>
+    set({ correctOptionIds, answerCount, participantCount, currentExplanation: explanation ?? null, gamePhase: 'show_answer' }),
   setLeaderboard: (leaderboard) => set({ leaderboard, gamePhase: 'show_leaderboard' }),
   reset: () =>
     set({
@@ -96,6 +98,7 @@ export const useHostStore = create<HostState>((set) => ({
       currentQuestion: null,
       correctOptionIds: [],
       answerCount: 0,
+      currentExplanation: null,
       leaderboard: [],
     }),
 }))

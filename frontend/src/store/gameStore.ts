@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand'
+import { create } from 'zustand'
 
 export type GamePhase = 'landing' | 'join' | 'lobby' | 'question' | 'show_answer' | 'leaderboard' | 'finished'
 
@@ -33,6 +33,8 @@ interface GameState {
   scoreEarned: number
   totalScore: number
   leaderboard: LeaderboardEntry[]
+  prevLeaderboard: LeaderboardEntry[]  // для стрелок изменения позиции
+  currentExplanation: string | null    // объяснение к ответу
   participants: number
   gameTitle: string
 
@@ -41,7 +43,7 @@ interface GameState {
   setParticipantName: (name: string) => void
   setReconnectToken: (token: string) => void
   setCurrentQuestion: (q: Question) => void
-  setCorrectAnswer: (ids: string[], scoreEarned: number) => void
+  setCorrectAnswer: (ids: string[], scoreEarned: number, explanation?: string | null) => void
   setMyAnswer: (ids: string[]) => void
   setLeaderboard: (lb: LeaderboardEntry[]) => void
   setParticipants: (n: number) => void
@@ -61,6 +63,8 @@ export const useGameStore = create<GameState>((set) => ({
   scoreEarned: 0,
   totalScore: 0,
   leaderboard: [],
+  prevLeaderboard: [],
+  currentExplanation: null,
   participants: 0,
   gameTitle: 'QuizTime',
 
@@ -68,16 +72,28 @@ export const useGameStore = create<GameState>((set) => ({
   setGameCode: (gameCode) => set({ gameCode }),
   setParticipantName: (participantName) => set({ participantName }),
   setReconnectToken: (reconnectToken) => set({ reconnectToken }),
-  setCurrentQuestion: (currentQuestion) => set({ currentQuestion, myAnswerIds: [], correctAnswerIds: [], scoreEarned: 0 }),
-  setCorrectAnswer: (correctAnswerIds, scoreEarned) => set({ correctAnswerIds, scoreEarned }),
+  setCurrentQuestion: (currentQuestion) =>
+    set({ currentQuestion, myAnswerIds: [], correctAnswerIds: [], scoreEarned: 0, currentExplanation: null }),
+  setCorrectAnswer: (correctAnswerIds, scoreEarned, explanation = null) =>
+    set({ correctAnswerIds, scoreEarned, currentExplanation: explanation ?? null }),
   setMyAnswer: (myAnswerIds) => set({ myAnswerIds }),
-  setLeaderboard: (leaderboard) => set({ leaderboard }),
+  setLeaderboard: (leaderboard) =>
+    set((state) => ({ prevLeaderboard: state.leaderboard, leaderboard })),
   setParticipants: (participants) => set({ participants }),
   setTotalScore: (totalScore) => set({ totalScore }),
   setGameTitle: (gameTitle) => set({ gameTitle }),
-  reset: () => set({
-    phase: 'landing', currentQuestion: null, correctAnswerIds: [],
-    myAnswerIds: [], scoreEarned: 0, totalScore: 0, leaderboard: [],
-    participants: 0, reconnectToken: null,
-  }),
+  reset: () =>
+    set({
+      phase: 'landing',
+      currentQuestion: null,
+      correctAnswerIds: [],
+      myAnswerIds: [],
+      scoreEarned: 0,
+      totalScore: 0,
+      leaderboard: [],
+      prevLeaderboard: [],
+      currentExplanation: null,
+      participants: 0,
+      reconnectToken: null,
+    }),
 }))

@@ -13,8 +13,6 @@ import { JwtService } from '@nestjs/jwt';
 @WebSocketGateway({ cors: { origin: '*' }, namespace: '/' })
 export class GameGateway implements OnGatewayDisconnect {
   @WebSocketServer() server: Server;
-
-  // in-memory timers per session
   private timers = new Map<string, NodeJS.Timeout>();
 
   constructor(
@@ -33,19 +31,25 @@ export class GameGateway implements OnGatewayDisconnect {
   }
 
   private buildQuestionPayload(
-    question: { id: string; text: string; type: string; timerSec: number; options: { id: string; text: string; isCorrect: boolean }[] },
+    question: {
+      id: string;
+      text: string;
+      type: string;
+      timerSec: number;
+      options: { id: string; text: string; isCorrect: boolean }[];
+    },
     questionIndex: number,
     totalQuestions: number,
+    startedAt: number,
   ) {
-    const now = Date.now();
     return {
       questionId: question.id,
       question: question.text,
       type: question.type,
       options: question.options.map((o) => ({ id: o.id, text: o.text })),
       timerSec: question.timerSec,
-      startedAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + question.timerSec * 1000).toISOString(),
+      startedAt: new Date(startedAt).toISOString(),
+      expiresAt: new Date(startedAt + question.timerSec * 1000).toISOString(),
       questionIndex,
       totalQuestions,
       roundName: '',
@@ -85,12 +89,28 @@ export class GameGateway implements OnGatewayDisconnect {
   }
 
   @SubscribeMessage('start_game')
-  async handleStartGame(@ConnectedSocket() client: Socket) {
+  async handleStartGame(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    data?: {
+      showAnswerSec?: number;
+      showLeaderboardSec?: number;
+      speedBonus?: boolean;
+    },
+  ) {
     if (!client.data.isHost) {
       client.emit('error', { message: 'Not a host' });
       return;
     }
     const code = client.data.sessionCode as string;
+
+    // Apply game settings
+    this.gameService.applySettings(code, {
+      showAnswerSec: data?.showAnswerSec ?? 5,
+      showLeaderboardSec: data?.showLeaderboardSec ?? 5,
+      speedBonus: data?.speedBonus ?? true,
+    });
+
     const result = await this.gameService.startGame(code);
     if (!result.success) {
       client.emit('error', { message: result.error });
@@ -101,9 +121,10 @@ export class GameGateway implements OnGatewayDisconnect {
       result.question!,
       result.questionIndex!,
       result.totalQuestions!,
+      result.questionStartedAt!,
     );
     this.server.to(code).emit('question_start', payload);
-    this.scheduleQuestionEnd(code, result.question!.timerSec, result.question!.id);
+    this.scheduleQuestionEnd(code, result.question!.timerSec);
   }
 
   @SubscribeMessage('next_question')
@@ -123,7 +144,8 @@ export class GameGateway implements OnGatewayDisconnect {
   @SubscribeMessage('join_game')
   async handlePlayerJoin(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { gameCode: string; displayName: string; token?: string },
+    @MessageBody()
+    data: { gameCode: string; displayName: string; token?: string },
   ) {
     const userId = this.extractUserId(data.token);
     const result = await this.gameService.playerJoin(
@@ -148,7 +170,6 @@ export class GameGateway implements OnGatewayDisconnect {
       participantId: result.participantId,
     });
 
-    // Notify everyone (host sees participant list update)
     this.server.to(data.gameCode).emit('participant_joined', {
       displayName: data.displayName,
       count: result.participantCount,
@@ -158,22 +179,62 @@ export class GameGateway implements OnGatewayDisconnect {
   @SubscribeMessage('submit_answer')
   async handleSubmitAnswer(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { optionIds?: string[]; selectedOptionIds?: string[]; questionId?: string },
+    @MessageBody()
+    data: {
+      optionIds?: string[];
+      selectedOptionIds?: string[];
+      questionId?: string;
+    },
   ) {
     const code = client.data.sessionCode as string;
     const participantId = client.data.participantId as string;
     if (!participantId || !code) return;
 
     const optionIds = data.optionIds ?? data.selectedOptionIds ?? [];
-    const result = await this.gameService.submitAnswer(code, participantId, optionIds);
+    const result = await this.gameService.submitAnswer(
+      code,
+      participantId,
+      optionIds,
+    );
 
     if (result) {
-      // Private feedback to player
       client.emit('answer_result', {
         isCorrect: result.isCorrect,
         scoreEarned: result.scoreEarned,
+        speedBonus: result.speedBonus,
       });
     }
+  }
+
+  @SubscribeMessage('reconnect_request')
+  async handleReconnect(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { reconnectToken: string },
+  ) {
+    if (!data?.reconnectToken) return;
+
+    const result = this.gameService.reconnectParticipant(
+      data.reconnectToken,
+      client.id,
+    );
+    if (!result) {
+      client.emit('error', { message: 'Reconnect failed — игра не найдена' });
+      return;
+    }
+
+    client.data.participantId = result.participantId;
+    client.data.sessionCode = result.code;
+    client.join(result.code);
+
+    client.emit('reconnected', {
+      participantId: result.participantId,
+      displayName: result.displayName,
+      score: result.score,
+      correctCount: result.correctCount,
+      status: result.status,
+      quizTitle: result.quizTitle,
+      currentQuestion: result.currentQuestion,
+    });
   }
 
   // ─── DISCONNECT ──────────────────────────────────────────────────────────
@@ -182,21 +243,21 @@ export class GameGateway implements OnGatewayDisconnect {
     if (client.data.isHost && client.data.sessionCode) {
       this.server
         .to(client.data.sessionCode as string)
-        .emit('host_disconnected', {});
+        .emit('host_disconnected', { pausesAt: null });
     }
   }
 
   // ─── INTERNAL FLOW ───────────────────────────────────────────────────────
 
-  private scheduleQuestionEnd(code: string, timerSec: number, questionId: string) {
+  private scheduleQuestionEnd(code: string, timerSec: number) {
     this.clearTimer(`q_${code}`);
     const t = setTimeout(async () => {
-      await this.emitShowAnswer(code, questionId);
+      await this.emitShowAnswer(code);
     }, timerSec * 1000);
     this.timers.set(`q_${code}`, t);
   }
 
-  private async emitShowAnswer(code: string, _questionId: string) {
+  private async emitShowAnswer(code: string) {
     const result = this.gameService.getAnswerResult(code);
     if (!result) return;
 
@@ -204,12 +265,16 @@ export class GameGateway implements OnGatewayDisconnect {
       correctOptionIds: result.correctOptionIds,
       answerCount: result.answerCount,
       participantCount: result.participantCount,
+      explanation: result.explanation ?? null,
     });
+
+    const { showAnswerSec } = this.gameService.getSettings(code);
+    const delay = Math.max(1, showAnswerSec) * 1000;
 
     this.clearTimer(`ans_${code}`);
     const t = setTimeout(async () => {
       await this.emitShowLeaderboard(code);
-    }, 5000);
+    }, delay);
     this.timers.set(`ans_${code}`, t);
   }
 
@@ -217,10 +282,13 @@ export class GameGateway implements OnGatewayDisconnect {
     const leaderboard = this.gameService.getLeaderboard(code);
     this.server.to(code).emit('show_leaderboard', { top: leaderboard });
 
+    const { showLeaderboardSec } = this.gameService.getSettings(code);
+    const delay = Math.max(1, showLeaderboardSec) * 1000;
+
     this.clearTimer(`lb_${code}`);
     const t = setTimeout(async () => {
       await this.advanceToNext(code);
-    }, 5000);
+    }, delay);
     this.timers.set(`lb_${code}`, t);
   }
 
@@ -239,9 +307,10 @@ export class GameGateway implements OnGatewayDisconnect {
       result.question!,
       result.questionIndex,
       result.totalQuestions,
+      result.questionStartedAt,
     );
     this.server.to(code).emit('question_start', payload);
-    this.scheduleQuestionEnd(code, result.question!.timerSec, result.question!.id);
+    this.scheduleQuestionEnd(code, result.question!.timerSec);
   }
 
   private async finishGame(code: string) {

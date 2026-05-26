@@ -14,6 +14,7 @@ export default function HostGamePage() {
     answerCount,
     participantCount,
     leaderboard,
+    currentExplanation,
     setPhase,
   } = store
 
@@ -39,7 +40,7 @@ export default function HostGamePage() {
     })
 
     socket.on('show_answer', (data: any) => {
-      store.setShowAnswer(data.correctOptionIds ?? [], data.answerCount ?? 0, data.participantCount ?? 0)
+      store.setShowAnswer(data.correctOptionIds ?? [], data.answerCount ?? 0, data.participantCount ?? 0, data.explanation ?? null)
     })
 
     socket.on('show_leaderboard', (data: any) => {
@@ -133,7 +134,13 @@ export default function HostGamePage() {
               </div>
             </div>
           )}
-          <p className="text-white/30 text-xs text-center">Показывается участникам · авто-переход 5 сек.</p>
+          {currentExplanation && (
+            <div className="bg-[#0d1525] rounded-xl px-4 py-3 mb-3 border border-[#7c6ded]/20">
+              <p className="text-[#7c6ded] text-xs mb-1">Пояснение</p>
+              <p className="text-white/70 text-sm">{currentExplanation}</p>
+            </div>
+          )}
+          <p className="text-white/30 text-xs text-center">Показывается участникам · авто-переход</p>
         </div>
       </div>
     )

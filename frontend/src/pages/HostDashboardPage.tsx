@@ -59,7 +59,14 @@ export default function HostDashboardPage() {
           >
             ←
           </button>
-          <h1 className="text-2xl font-bold text-white">Мои квизы</h1>
+          <h1 className="text-2xl font-bold text-white flex-1">Мои квизы</h1>
+          <button
+            onClick={() => setPhase('analytics')}
+            className="text-white/40 hover:text-white transition text-sm flex items-center gap-1"
+            title="История игр"
+          >
+            📊
+          </button>
         </div>
 
         {error && (

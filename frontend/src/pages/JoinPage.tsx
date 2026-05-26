@@ -27,6 +27,9 @@ export default function JoinPage() {
     }
     setLoading(true)
     setError('')
+    // Clear previous session data before starting a new join
+    localStorage.removeItem('reconnect_token')
+    localStorage.removeItem('game_code')
 
     try {
       let token = ''
