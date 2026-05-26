@@ -8,12 +8,21 @@ export function getSocket(token?: string): Socket {
   if (!socket || !socket.connected) {
     socket = io(SOCKET_URL, {
       auth: token ? { token } : undefined,
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
     })
   }
   return socket
+}
+
+/** Force a fresh socket (e.g. when switching roles). */
+export function resetSocket(token?: string): Socket {
+  if (socket) {
+    socket.disconnect()
+    socket = null
+  }
+  return getSocket(token)
 }
 
 export function disconnectSocket() {

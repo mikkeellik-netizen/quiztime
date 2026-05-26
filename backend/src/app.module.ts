@@ -3,10 +3,11 @@ import { PrismaModule } from './shared/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { QuizModule } from './modules/quiz/quiz.module';
 import { ImportModule } from './modules/import/import.module';
+import { GameModule } from './modules/game/game.module';
 import { SpaController } from './spa.controller';
 
 @Module({
-  imports: [PrismaModule, AuthModule, QuizModule, ImportModule],
+  imports: [PrismaModule, AuthModule, QuizModule, ImportModule, GameModule],
   controllers: [SpaController],
 })
 export class AppModule {}

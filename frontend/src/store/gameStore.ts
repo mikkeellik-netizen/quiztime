@@ -1,6 +1,6 @@
-import { create } from 'zustand'
+﻿import { create } from 'zustand'
 
-export type GamePhase = 'join' | 'lobby' | 'question' | 'show_answer' | 'leaderboard' | 'finished'
+export type GamePhase = 'landing' | 'join' | 'lobby' | 'question' | 'show_answer' | 'leaderboard' | 'finished'
 
 export interface Question {
   id: string
@@ -51,7 +51,7 @@ interface GameState {
 }
 
 export const useGameStore = create<GameState>((set) => ({
-  phase: 'join',
+  phase: 'landing',
   gameCode: '',
   participantName: '',
   reconnectToken: null,
@@ -76,7 +76,7 @@ export const useGameStore = create<GameState>((set) => ({
   setTotalScore: (totalScore) => set({ totalScore }),
   setGameTitle: (gameTitle) => set({ gameTitle }),
   reset: () => set({
-    phase: 'join', currentQuestion: null, correctAnswerIds: [],
+    phase: 'landing', currentQuestion: null, correctAnswerIds: [],
     myAnswerIds: [], scoreEarned: 0, totalScore: 0, leaderboard: [],
     participants: 0, reconnectToken: null,
   }),

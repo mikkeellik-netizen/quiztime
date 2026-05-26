@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-export function useServerTimer(expiresAt: string | null, timerSec: number): number {
+export function useServerTimer(expiresAt: string | null, timerSec: number = 30): number {
   const [secondsLeft, setSecondsLeft] = useState(timerSec)
 
   useEffect(() => {

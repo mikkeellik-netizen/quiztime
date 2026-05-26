@@ -1,10 +1,77 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { QuizImportResult } from '../import/dto/import-result.dto';
 
 @Injectable()
 export class QuizService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async listByHost(hostUserId: string) {
+    const quizzes = await this.prisma.quiz.findMany({
+      where: { hostUserId },
+      include: {
+        rounds: {
+          include: { _count: { select: { questions: true } } },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    return quizzes.map((q) => ({
+      id: q.id,
+      title: q.title,
+      status: q.status,
+      updatedAt: q.updatedAt,
+      roundCount: q.rounds.length,
+      questionCount: q.rounds.reduce((sum, r) => sum + r._count.questions, 0),
+    }));
+  }
+
+  async getById(id: string, hostUserId: string) {
+    const quiz = await this.prisma.quiz.findUnique({
+      where: { id },
+      include: {
+        rounds: {
+          orderBy: { orderIndex: 'asc' },
+          include: {
+            questions: {
+              orderBy: { orderIndex: 'asc' },
+              include: { options: { orderBy: { orderIndex: 'asc' } } },
+            },
+          },
+        },
+      },
+    });
+    if (!quiz) throw new NotFoundException('Quiz not found');
+    if (quiz.hostUserId !== hostUserId) throw new ForbiddenException('Not your quiz');
+    return quiz;
+  }
+
+  async createSession(quizId: string, hostUserId: string) {
+    await this.getById(quizId, hostUserId);
+
+    const quiz = await this.prisma.quiz.findUnique({ where: { id: quizId } });
+    const code = this.generateCode();
+
+    const session = await this.prisma.gameSession.create({
+      data: {
+        quizId,
+        hostUserId,
+        code,
+        status: 'WAITING',
+        mode: quiz!.mode,
+      },
+    });
+
+    return { sessionId: session.id, code: session.code, quizTitle: quiz!.title };
+  }
+
+  private generateCode(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    return Array.from({ length: 6 }, () =>
+      chars[Math.floor(Math.random() * chars.length)],
+    ).join('');
+  }
 
   /** Создаёт полный квиз из результата импорта в одной транзакции. */
   async createFromImport(
