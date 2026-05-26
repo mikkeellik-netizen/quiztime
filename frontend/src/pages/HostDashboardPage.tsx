@@ -6,7 +6,7 @@ import { resetSocket } from '../socket/socket'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export default function HostDashboardPage() {
-  const { token, quizzes, setPhase, setGame } = useHostStore()
+  const { token, quizzes, setPhase, setGame, setQuizzes } = useHostStore()
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState('')
 
@@ -62,10 +62,16 @@ export default function HostDashboardPage() {
           <h1 className="text-2xl font-bold text-white flex-1">Мои квизы</h1>
           <button
             onClick={() => setPhase('analytics')}
-            className="text-white/40 hover:text-white transition text-sm flex items-center gap-1"
+            className="text-white/40 hover:text-white transition text-sm"
             title="История игр"
           >
             📊
+          </button>
+          <button
+            onClick={() => setPhase('builder')}
+            className="px-4 py-2 rounded-xl bg-[#7c6ded] hover:bg-[#6a5bd4] text-white font-bold text-sm transition"
+          >
+            + Создать
           </button>
         </div>
 
@@ -80,22 +86,14 @@ export default function HostDashboardPage() {
             <div className="text-5xl mb-4">📭</div>
             <p className="text-white/50 text-lg">Квизов пока нет</p>
             <p className="text-white/30 text-sm mt-2 max-w-xs mx-auto">
-              Скачай шаблон, заполни вопросы и загрузи через API
+              Нажми «+ Создать» чтобы составить первый квиз
             </p>
-            <div className="flex gap-3 mt-6 justify-center">
-              <a
-                href={`${API_URL}/api/import/template/xlsx`}
-                className="px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm hover:bg-white/20 transition"
-              >
-                📥 Excel шаблон
-              </a>
-              <a
-                href={`${API_URL}/api/import/template/txt`}
-                className="px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm hover:bg-white/20 transition"
-              >
-                📥 TXT шаблон
-              </a>
-            </div>
+            <button
+              onClick={() => setPhase('builder')}
+              className="mt-6 px-6 py-3 rounded-xl bg-[#7c6ded] hover:bg-[#6a5bd4] text-white font-bold transition"
+            >
+              + Создать квиз
+            </button>
           </div>
         ) : (
           <div className="space-y-3">

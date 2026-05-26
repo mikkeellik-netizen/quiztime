@@ -14,6 +14,7 @@ import HostLobbyPage from './pages/HostLobbyPage'
 import HostGamePage from './pages/HostGamePage'
 import HostFinishedPage from './pages/HostFinishedPage'
 import AnalyticsPage from './pages/AnalyticsPage'
+import QuizBuilderPage from './pages/QuizBuilderPage'
 
 export default function App() {
   const phase = useGameStore((s) => s.phase)
@@ -75,6 +76,7 @@ export default function App() {
         {hostPhase === 'game' && <HostGamePage />}
         {hostPhase === 'finished' && <HostFinishedPage />}
         {hostPhase === 'analytics' && <AnalyticsPage />}
+        {hostPhase === 'builder' && <QuizBuilderPage />}
       </div>
     )
   }

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type HostPhase = 'idle' | 'dashboard' | 'lobby' | 'game' | 'finished' | 'analytics'
+export type HostPhase = 'idle' | 'dashboard' | 'lobby' | 'game' | 'finished' | 'analytics' | 'builder'
 export type HostGamePhase = 'waiting' | 'question' | 'show_answer' | 'show_leaderboard' | 'finished'
 
 export interface Quiz {
