@@ -15,18 +15,15 @@ import HostGamePage from './pages/HostGamePage'
 import HostFinishedPage from './pages/HostFinishedPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import QuizBuilderPage from './pages/QuizBuilderPage'
-import { loadSavedToken } from './api/auth'
+import { getToken } from './api/auth'
 
 export default function App() {
   const phase = useGameStore((s) => s.phase)
   const hostPhase = useHostStore((s) => s.phase)
 
-  // Restore token from localStorage on startup
+  // Restore token from localStorage into store on startup
   useEffect(() => {
-    const saved = loadSavedToken()
-    if (saved && !useHostStore.getState().token) {
-      useHostStore.getState().setToken(saved)
-    }
+    getToken() // syncs localStorage → store if needed
   }, [])
 
   // Global reconnect handler: если страница была перезагружена во время игры

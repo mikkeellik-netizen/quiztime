@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { useHostStore } from '../store/hostStore'
-import { getToken, clearSavedToken } from '../api/auth'
+import { getToken } from '../api/auth'
 
 const DRAFT_KEY = 'quiz_draft'
 
@@ -193,32 +193,16 @@ export default function QuizBuilderPage() {
       setPhase('dashboard')
     }
 
+    const authToken = getToken()
+    if (!authToken) {
+      setError('Сессия истекла. Вернись на главный экран и войди снова.')
+      setSaving(false)
+      return
+    }
+
     try {
-      // Get the best available token (store → localStorage → fresh Telegram auth)
-      const authToken = await getToken()
-      if (!authToken) {
-        setError('Не удалось авторизоваться. Вернись на главный экран и попробуй снова.')
-        setSaving(false)
-        return
-      }
       await doSave(authToken)
     } catch (e: any) {
-      // 401 → token expired, clear and re-try with fresh auth
-      if (e.response?.status === 401) {
-        clearSavedToken()
-        useHostStore.getState().setToken('')
-        try {
-          const freshToken = await getToken()
-          if (freshToken) {
-            await doSave(freshToken)
-            return
-          }
-        } catch (e2: any) {
-          setError(e2.response?.data?.message || 'Ошибка авторизации')
-          setSaving(false)
-          return
-        }
-      }
       setError(e.response?.data?.message || e.message || 'Ошибка сохранения')
       setSaving(false)
     }
