@@ -10,11 +10,13 @@ datasource db {
 
 // ── Пользователи ──────────────────────────────────────────────────
 model User {
-  id          String   @id @default(uuid())
-  telegramId  BigInt   @unique @map("telegram_id")
-  username    String?
-  displayName String   @map("display_name")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id            String   @id @default(uuid())
+  telegramId    BigInt?  @unique @map("telegram_id")
+  loginUsername String?  @unique @map("login_username")
+  passwordHash  String?  @map("password_hash")
+  username      String?
+  displayName   String   @map("display_name")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   quizzes      Quiz[]
   sessions     GameSession[]

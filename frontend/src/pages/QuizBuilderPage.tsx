@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { useHostStore } from '../store/hostStore'
 import { getToken, clearSavedToken } from '../api/auth'
+
+const DRAFT_KEY = 'quiz_draft'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
@@ -60,6 +62,30 @@ function makeRound(n: number): BuildRound {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+// ─── Draft helpers ────────────────────────────────────────────────────────────
+
+function saveDraft(title: string, rounds: BuildRound[]) {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, rounds, savedAt: Date.now() }))
+  } catch {}
+}
+
+function loadDraft(): { title: string; rounds: BuildRound[]; savedAt: number } | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY)
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export default function QuizBuilderPage() {
   const { setPhase, setQuizzes } = useHostStore()
   const [title, setTitle] = useState('')
@@ -67,6 +93,23 @@ export default function QuizBuilderPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [editingQ, setEditingQ] = useState<{ roundId: string; qId: string } | null>(null)
+  const [draftBanner, setDraftBanner] = useState(false)
+  const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Check for existing draft on mount
+  useEffect(() => {
+    const draft = loadDraft()
+    if (draft && (draft.title || draft.rounds.some(r => r.questions.some(q => q.text)))) {
+      setDraftBanner(true)
+    }
+  }, [])
+
+  // Auto-save draft on every change (debounced 1.5s)
+  useEffect(() => {
+    if (autoSaveRef.current) clearTimeout(autoSaveRef.current)
+    autoSaveRef.current = setTimeout(() => saveDraft(title, rounds), 1500)
+    return () => { if (autoSaveRef.current) clearTimeout(autoSaveRef.current) }
+  }, [title, rounds])
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
   const addRound = () => setRounds(r => [...r, makeRound(r.length + 1)])
@@ -146,6 +189,7 @@ export default function QuizBuilderPage() {
         headers: { Authorization: `Bearer ${authToken}` },
       })
       setQuizzes(res.data)
+      clearDraft()
       setPhase('dashboard')
     }
 
@@ -201,6 +245,29 @@ export default function QuizBuilderPage() {
             {saving ? 'Сохранение...' : '✓ Сохранить'}
           </button>
         </div>
+
+        {/* Draft restore banner */}
+        {draftBanner && (
+          <div className="bg-[#7c6ded]/15 border border-[#7c6ded]/30 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
+            <span className="text-[#9b8ff5] text-sm flex-1">📝 Есть незаконченный черновик</span>
+            <button
+              onClick={() => {
+                const draft = loadDraft()
+                if (draft) { setTitle(draft.title); setRounds(draft.rounds) }
+                setDraftBanner(false)
+              }}
+              className="text-[#7c6ded] text-sm font-bold hover:text-[#9b8ff5] transition"
+            >
+              Восстановить
+            </button>
+            <button
+              onClick={() => { clearDraft(); setDraftBanner(false) }}
+              className="text-white/30 text-sm hover:text-white/60 transition"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Error */}
         {error && (
