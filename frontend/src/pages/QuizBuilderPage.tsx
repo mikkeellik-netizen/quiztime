@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import axios from 'axios'
 import { useHostStore } from '../store/hostStore'
+import { getToken, clearSavedToken } from '../api/auth'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
@@ -60,7 +61,7 @@ function makeRound(n: number): BuildRound {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function QuizBuilderPage() {
-  const { token, setPhase, setQuizzes } = useHostStore()
+  const { setPhase, setQuizzes } = useHostStore()
   const [title, setTitle] = useState('')
   const [rounds, setRounds] = useState<BuildRound[]>([makeRound(1)])
   const [saving, setSaving] = useState(false)
@@ -115,7 +116,7 @@ export default function QuizBuilderPage() {
     setSaving(true)
     setError('')
 
-    try {
+    const doSave = async (authToken: string) => {
       const importData = {
         title: title.trim(),
         rounds: rounds.map(r => ({
@@ -138,15 +139,42 @@ export default function QuizBuilderPage() {
       await axios.post(
         `${API_URL}/api/quizzes/import`,
         { title: title.trim(), data: importData },
-        { headers: { Authorization: `Bearer ${token}` } },
+        { headers: { Authorization: `Bearer ${authToken}` } },
       )
 
       const res = await axios.get(`${API_URL}/api/quizzes`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${authToken}` },
       })
       setQuizzes(res.data)
       setPhase('dashboard')
+    }
+
+    try {
+      // Get the best available token (store → localStorage → fresh Telegram auth)
+      const authToken = await getToken()
+      if (!authToken) {
+        setError('Не удалось авторизоваться. Вернись на главный экран и попробуй снова.')
+        setSaving(false)
+        return
+      }
+      await doSave(authToken)
     } catch (e: any) {
+      // 401 → token expired, clear and re-try with fresh auth
+      if (e.response?.status === 401) {
+        clearSavedToken()
+        useHostStore.getState().setToken('')
+        try {
+          const freshToken = await getToken()
+          if (freshToken) {
+            await doSave(freshToken)
+            return
+          }
+        } catch (e2: any) {
+          setError(e2.response?.data?.message || 'Ошибка авторизации')
+          setSaving(false)
+          return
+        }
+      }
       setError(e.response?.data?.message || e.message || 'Ошибка сохранения')
       setSaving(false)
     }
