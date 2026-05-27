@@ -21,9 +21,13 @@ export default function App() {
   const phase = useGameStore((s) => s.phase)
   const hostPhase = useHostStore((s) => s.phase)
 
-  // Restore token from localStorage into store on startup
+  // Restore token from localStorage into store on startup (sync, no HTTP)
   useEffect(() => {
-    getToken() // syncs localStorage → store if needed
+    try {
+      getToken()
+    } catch {
+      // localStorage may be unavailable in some webviews — игнорируем
+    }
   }, [])
 
   // Global reconnect handler: если страница была перезагружена во время игры

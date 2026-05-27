@@ -1,64 +1,119 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
 import { useGameStore } from '../store/gameStore'
 import { useHostStore } from '../store/hostStore'
-import { persistToken, loadSavedToken } from '../api/auth'
+import { apiClient, asArray, getErrorMessage } from '../api/client'
+import { persistToken, loadSavedToken, clearSavedToken } from '../api/auth'
 import AuthPage from './AuthPage'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+type Mode = 'landing' | 'auth' | 'booting'
 
 export default function LandingPage() {
-  const [showAuth, setShowAuth] = useState(false)
+  const [mode, setMode] = useState<Mode>('booting')
+  const [bootError, setBootError] = useState('')
   const setGamePhase = useGameStore((s) => s.setPhase)
-  const { setQuizzes, setPhase: setHostPhase } = useHostStore()
+  const setQuizzes = useHostStore((s) => s.setQuizzes)
+  const setHostPhase = useHostStore((s) => s.setPhase)
 
-  // Try silent Telegram auth on load
+  // ─── Boot: на старте пробуем восстановить сессию ──────────────────────
   useEffect(() => {
-    const tgData = (window as any).Telegram?.WebApp?.initData
-    if (!tgData) return
+    let cancelled = false
 
-    axios.post(`${API_URL}/api/auth/telegram`, { initData: tgData })
-      .then(res => {
-        const tok = res.data?.accessToken
-        if (!tok) return
-        persistToken(tok)
-        return axios.get(`${API_URL}/api/quizzes`, {
-          headers: { Authorization: `Bearer ${tok}` },
-        }).then(r => setQuizzes(r.data))
-      })
-      .catch(() => {})
-  }, [])
+    const boot = async () => {
+      // 1. Если мы внутри Telegram WebApp — пробуем silent auth
+      const tgData = (window as any).Telegram?.WebApp?.initData
+      const existingToken = loadSavedToken()
 
-  const goHost = () => {
-    // Check if already logged in (store or localStorage)
-    const token = useHostStore.getState().token || loadSavedToken()
-    if (token) {
-      // Try to enter dashboard with existing token
-      axios.get(`${API_URL}/api/quizzes`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then(r => {
-          setQuizzes(r.data)
-          if (token !== useHostStore.getState().token) {
-            useHostStore.getState().setToken(token)
-          }
+      try {
+        if (tgData && !existingToken) {
+          // Silent Telegram auth (только если ещё нет токена)
+          const res = await apiClient.post('/api/auth/telegram', { initData: tgData })
+          const tok = res.data?.accessToken
+          if (tok) persistToken(tok)
+        }
+
+        // 2. Если есть токен — проверяем его живость через /auth/me
+        const token = loadSavedToken()
+        if (token) {
+          await apiClient.get('/api/auth/me')
+          // токен валиден → загружаем квизы и идём в дашборд
+          const quizzes = await apiClient.get('/api/quizzes')
+          if (cancelled) return
+          setQuizzes(asArray(quizzes.data))
           setHostPhase('dashboard')
-        })
-        .catch(e => {
-          if (e.response?.status === 401) {
-            // Token expired — clear and show login form
-            localStorage.removeItem('auth_token')
-            useHostStore.getState().setToken('')
-          }
-          setShowAuth(true)
-        })
-    } else {
-      setShowAuth(true)
+          return
+        }
+      } catch (err: any) {
+        // Любая ошибка авторизации — просто чистим токен и показываем landing
+        if (err?.response?.status === 401) {
+          clearSavedToken()
+        }
+      }
+
+      if (!cancelled) setMode('landing')
+    }
+
+    boot().catch((err) => {
+      if (!cancelled) {
+        setBootError(getErrorMessage(err))
+        setMode('landing')
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [setQuizzes, setHostPhase])
+
+  // ─── Click handlers ───────────────────────────────────────────────────
+  const goHost = async () => {
+    setBootError('')
+    const token = loadSavedToken()
+
+    if (!token) {
+      // Нет токена → сразу показываем форму входа
+      setMode('auth')
+      return
+    }
+
+    // Есть токен → быстро проверяем и идём в дашборд
+    setMode('booting')
+    try {
+      const quizzes = await apiClient.get('/api/quizzes')
+      setQuizzes(asArray(quizzes.data))
+      setHostPhase('dashboard')
+    } catch (err: any) {
+      if (err?.response?.status === 401) {
+        clearSavedToken()
+        setMode('auth')
+      } else {
+        setBootError(getErrorMessage(err))
+        setMode('landing')
+      }
     }
   }
 
-  if (showAuth) {
-    return <AuthPage onBack={() => setShowAuth(false)} />
+  const goJoin = () => setGamePhase('join')
+
+  // ─── Render ───────────────────────────────────────────────────────────
+
+  if (mode === 'auth') {
+    return (
+      <AuthPage
+        onBack={() => setMode('landing')}
+        onSuccess={() => {
+          // AuthPage установит token + перенесёт в dashboard сам
+        }}
+      />
+    )
+  }
+
+  if (mode === 'booting') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen px-6">
+        <div className="text-5xl mb-4 animate-pulse">🎯</div>
+        <p className="text-white/50 text-sm">Загрузка...</p>
+      </div>
+    )
   }
 
   return (
@@ -68,6 +123,12 @@ export default function LandingPage() {
         <h1 className="text-4xl font-bold text-white">QuizTime</h1>
         <p className="text-[#5a6b8a] mt-3">Интерактивные викторины в реальном времени</p>
       </div>
+
+      {bootError && (
+        <div className="bg-red-900/20 border border-red-500/30 text-red-400 rounded-xl px-4 py-3 text-sm text-center max-w-sm w-full mb-4">
+          {bootError}
+        </div>
+      )}
 
       <div className="w-full max-w-sm space-y-4">
         <button
@@ -79,7 +140,7 @@ export default function LandingPage() {
         </button>
 
         <button
-          onClick={() => setGamePhase('join')}
+          onClick={goJoin}
           className="w-full py-4 rounded-2xl bg-[#141e33] hover:bg-[#1a2845] border border-white/10 text-white font-bold text-lg transition flex items-center justify-center gap-3"
         >
           <span>👤</span>

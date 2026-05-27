@@ -78,7 +78,7 @@ export const useHostStore = create<HostState>((set) => ({
   setPhase: (phase) => set({ phase }),
   setGamePhase: (gamePhase) => set({ gamePhase }),
   setToken: (token) => set({ token }),
-  setQuizzes: (quizzes) => set({ quizzes }),
+  setQuizzes: (quizzes) => set({ quizzes: Array.isArray(quizzes) ? quizzes : [] }),
   setGame: (gameCode, quizTitle) => set({ gameCode, quizTitle, participantCount: 0, participantList: [] }),
   addParticipant: (displayName, count) =>
     set((s) => ({ participantList: [...s.participantList, displayName], participantCount: count })),

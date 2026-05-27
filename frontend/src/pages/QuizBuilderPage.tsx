@@ -74,7 +74,10 @@ function loadDraft(): { title: string; rounds: BuildRound[]; savedAt: number } |
   try {
     const raw = localStorage.getItem(DRAFT_KEY)
     if (!raw) return null
-    return JSON.parse(raw)
+    const parsed = JSON.parse(raw)
+    // Defensive: ensure rounds is an array
+    if (!parsed || !Array.isArray(parsed.rounds)) return null
+    return parsed
   } catch {
     return null
   }

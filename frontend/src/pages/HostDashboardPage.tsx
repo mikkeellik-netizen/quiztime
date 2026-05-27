@@ -6,7 +6,8 @@ import { resetSocket } from '../socket/socket'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export default function HostDashboardPage() {
-  const { token, quizzes, setPhase, setGame, setQuizzes } = useHostStore()
+  const { token, quizzes: rawQuizzes, setPhase, setGame, setQuizzes } = useHostStore()
+  const quizzes = Array.isArray(rawQuizzes) ? rawQuizzes : []
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState('')
 

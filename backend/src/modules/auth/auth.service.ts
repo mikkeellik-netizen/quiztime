@@ -71,6 +71,18 @@ export class AuthService {
     return { accessToken, user: { id: user.id, displayName: user.displayName, username: user.username } };
   }
 
+  // ─── Profile ──────────────────────────────────────────────────────────────
+
+  async getProfile(userId: string): Promise<AuthUser> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+    return {
+      id: user.id,
+      displayName: user.displayName,
+      username: user.username,
+    };
+  }
+
   // ─── Telegram auth ────────────────────────────────────────────────────────
 
   async loginWithTelegram(initData: string): Promise<{ accessToken: string; user: AuthUser }> {

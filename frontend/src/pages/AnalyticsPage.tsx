@@ -60,7 +60,7 @@ export default function AnalyticsPage() {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then((r) => {
-        setSessions(r.data)
+        setSessions(Array.isArray(r.data) ? r.data : [])
         setLoading(false)
       })
       .catch(() => {

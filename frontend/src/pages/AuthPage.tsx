@@ -1,13 +1,16 @@
 import { useState } from 'react'
-import axios from 'axios'
 import { useHostStore } from '../store/hostStore'
+import { apiClient, asArray, getErrorMessage } from '../api/client'
 import { persistToken } from '../api/auth'
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 type Tab = 'login' | 'register'
 
-export default function AuthPage({ onBack }: { onBack: () => void }) {
+interface Props {
+  onBack: () => void
+  onSuccess?: () => void
+}
+
+export default function AuthPage({ onBack, onSuccess }: Props) {
   const [tab, setTab] = useState<Tab>('login')
   const [loginUsername, setLoginUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -15,39 +18,67 @@ export default function AuthPage({ onBack }: { onBack: () => void }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const { setQuizzes, setPhase } = useHostStore()
+  const setQuizzes = useHostStore((s) => s.setQuizzes)
+  const setHostPhase = useHostStore((s) => s.setPhase)
 
   const handleSubmit = async () => {
     setError('')
-    if (!loginUsername.trim() || !password.trim()) {
-      setError('Заполни все поля')
+
+    const u = loginUsername.trim()
+    const p = password
+    const dn = displayName.trim()
+
+    if (!u || !p) {
+      setError('Заполни логин и пароль')
       return
     }
-    if (tab === 'register' && !displayName.trim()) {
+    if (u.length < 3) {
+      setError('Логин минимум 3 символа')
+      return
+    }
+    if (p.length < 4) {
+      setError('Пароль минимум 4 символа')
+      return
+    }
+    if (tab === 'register' && !dn) {
       setError('Введи своё имя')
       return
     }
+
     setLoading(true)
     try {
       const endpoint = tab === 'login' ? '/api/auth/login' : '/api/auth/register'
       const body = tab === 'login'
-        ? { loginUsername: loginUsername.trim(), password }
-        : { loginUsername: loginUsername.trim(), password, displayName: displayName.trim() }
+        ? { loginUsername: u, password: p }
+        : { loginUsername: u, password: p, displayName: dn }
 
-      const res = await axios.post(`${API_URL}${endpoint}`, body)
-      const token: string = res.data.accessToken
+      const res = await apiClient.post(endpoint, body)
+      const token: string | undefined = res.data?.accessToken
+      if (!token) {
+        setError('Ответ сервера без токена')
+        setLoading(false)
+        return
+      }
       persistToken(token)
 
-      const quizRes = await axios.get(`${API_URL}/api/quizzes`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      setQuizzes(quizRes.data)
-      setPhase('dashboard')
-    } catch (e: any) {
-      setError(e.response?.data?.message || e.message || 'Ошибка')
-    } finally {
+      // Сразу подтягиваем квизы
+      try {
+        const q = await apiClient.get('/api/quizzes')
+        setQuizzes(asArray(q.data))
+      } catch {
+        setQuizzes([])
+      }
+
+      onSuccess?.()
+      setHostPhase('dashboard')
+    } catch (err) {
+      setError(getErrorMessage(err, 'Ошибка авторизации'))
       setLoading(false)
     }
+  }
+
+  const onEnter = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !loading) handleSubmit()
   }
 
   return (
@@ -63,8 +94,13 @@ export default function AuthPage({ onBack }: { onBack: () => void }) {
         <div className="text-center mb-8">
           <div className="text-5xl mb-3">🎮</div>
           <h1 className="text-2xl font-bold text-white">
-            {tab === 'login' ? 'Войти' : 'Создать аккаунт'}
+            {tab === 'login' ? 'Войти в аккаунт' : 'Создать аккаунт'}
           </h1>
+          <p className="text-white/40 text-sm mt-2">
+            {tab === 'login'
+              ? 'Введи свой логин и пароль'
+              : 'Придумай логин и пароль для будущих входов'}
+          </p>
         </div>
 
         {/* Tabs */}
@@ -91,12 +127,12 @@ export default function AuthPage({ onBack }: { onBack: () => void }) {
           {tab === 'register' && (
             <input
               type="text"
-              placeholder="Твоё имя (будет видно участникам)"
+              placeholder="Твоё имя (видно участникам)"
               value={displayName}
               onChange={e => setDisplayName(e.target.value)}
               maxLength={50}
               className="w-full px-4 py-3 rounded-xl bg-[#141e33] border border-white/10 text-white focus:outline-none focus:border-[#7c6ded] transition"
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+              onKeyDown={onEnter}
             />
           )}
 
@@ -107,18 +143,20 @@ export default function AuthPage({ onBack }: { onBack: () => void }) {
             onChange={e => setLoginUsername(e.target.value)}
             maxLength={30}
             autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             className="w-full px-4 py-3 rounded-xl bg-[#141e33] border border-white/10 text-white focus:outline-none focus:border-[#7c6ded] transition"
-            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+            onKeyDown={onEnter}
           />
 
           <input
             type="password"
-            placeholder="Пароль"
+            placeholder="Пароль (минимум 4 символа)"
             value={password}
             onChange={e => setPassword(e.target.value)}
             maxLength={100}
             className="w-full px-4 py-3 rounded-xl bg-[#141e33] border border-white/10 text-white focus:outline-none focus:border-[#7c6ded] transition"
-            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+            onKeyDown={onEnter}
           />
 
           {error && (
@@ -134,6 +172,12 @@ export default function AuthPage({ onBack }: { onBack: () => void }) {
           >
             {loading ? '...' : tab === 'login' ? 'Войти' : 'Создать аккаунт'}
           </button>
+
+          <p className="text-center text-white/30 text-xs mt-4">
+            {tab === 'login'
+              ? 'Ещё нет аккаунта? Нажми «Регистрация» выше'
+              : 'Уже есть аккаунт? Нажми «Войти» выше'}
+          </p>
         </div>
       </div>
     </div>

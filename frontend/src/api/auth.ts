@@ -2,6 +2,13 @@ import { useHostStore } from '../store/hostStore'
 
 const TOKEN_KEY = 'auth_token'
 
+export interface AuthUser {
+  id: string
+  displayName: string
+  username: string | null
+}
+
+/** Read token from localStorage (sync, safe). */
 export function loadSavedToken(): string | null {
   try {
     return localStorage.getItem(TOKEN_KEY)
@@ -10,6 +17,7 @@ export function loadSavedToken(): string | null {
   }
 }
 
+/** Save token to localStorage and sync to store. */
 export function persistToken(token: string) {
   try {
     localStorage.setItem(TOKEN_KEY, token)
@@ -17,6 +25,7 @@ export function persistToken(token: string) {
   useHostStore.getState().setToken(token)
 }
 
+/** Clear token from localStorage and store. */
 export function clearSavedToken() {
   try {
     localStorage.removeItem(TOKEN_KEY)
