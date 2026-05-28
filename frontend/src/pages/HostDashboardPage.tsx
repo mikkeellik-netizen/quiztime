@@ -1,25 +1,51 @@
-import { useState } from 'react'
-import axios from 'axios'
+import { useState, useEffect } from 'react'
 import { useHostStore } from '../store/hostStore'
 import { resetSocket } from '../socket/socket'
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+import { apiClient, asArray, getErrorMessage } from '../api/client'
+import { clearSavedToken } from '../api/auth'
 
 export default function HostDashboardPage() {
   const { token, quizzes: rawQuizzes, setPhase, setGame, setQuizzes } = useHostStore()
   const quizzes = Array.isArray(rawQuizzes) ? rawQuizzes : []
   const [loading, setLoading] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(true)
   const [error, setError] = useState('')
+
+  // Всегда подтягиваем свежий список квизов при входе в дашборд
+  useEffect(() => {
+    let cancelled = false
+    setRefreshing(true)
+    apiClient
+      .get('/api/quizzes')
+      .then((res) => {
+        if (cancelled) return
+        setQuizzes(asArray(res.data))
+      })
+      .catch((err: any) => {
+        if (cancelled) return
+        if (err?.response?.status === 401) {
+          clearSavedToken()
+          setPhase('idle')
+        } else {
+          setError(getErrorMessage(err, 'Не удалось загрузить квизы'))
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRefreshing(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [setQuizzes, setPhase])
 
   const createSession = async (quizId: string, quizTitle: string) => {
     if (!token) return
     setLoading(quizId)
     setError('')
     try {
-      const res = await axios.post(
-        `${API_URL}/api/quizzes/${quizId}/sessions`,
+      const res = await apiClient.post(
+        `/api/quizzes/${quizId}/sessions`,
         {},
-        { headers: { Authorization: `Bearer ${token}` } },
       )
       const { code } = res.data
       setGame(code, quizTitle)
@@ -45,7 +71,7 @@ export default function HostDashboardPage() {
         }
       }, 3000)
     } catch (e: any) {
-      setError(e.response?.data?.message || e.message || 'Ошибка')
+      setError(getErrorMessage(e))
       setLoading(null)
     }
   }
@@ -82,7 +108,9 @@ export default function HostDashboardPage() {
           </div>
         )}
 
-        {quizzes.length === 0 ? (
+        {refreshing && quizzes.length === 0 ? (
+          <div className="text-center py-16 text-white/30">Загрузка...</div>
+        ) : quizzes.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">📭</div>
             <p className="text-white/50 text-lg">Квизов пока нет</p>

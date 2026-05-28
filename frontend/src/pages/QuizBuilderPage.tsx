@@ -1,11 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import axios from 'axios'
 import { useHostStore } from '../store/hostStore'
+import { apiClient, asArray, getErrorMessage } from '../api/client'
 import { getToken } from '../api/auth'
 
 const DRAFT_KEY = 'quiz_draft'
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 type QType = 'SINGLE' | 'MULTI' | 'TRUE_FALSE'
 
@@ -98,6 +96,8 @@ export default function QuizBuilderPage() {
   const [editingQ, setEditingQ] = useState<{ roundId: string; qId: string } | null>(null)
   const [draftBanner, setDraftBanner] = useState(false)
   const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Когда квиз успешно сохранён — НЕ восстанавливаем черновик на unmount
+  const savedRef = useRef(false)
 
   // Check for existing draft on mount
   useEffect(() => {
@@ -107,12 +107,37 @@ export default function QuizBuilderPage() {
     }
   }, [])
 
-  // Auto-save draft on every change (debounced 1.5s)
+  // Keep latest title/rounds in a ref so we can flush-save on unmount
+  const latestRef = useRef({ title, rounds })
+  latestRef.current = { title, rounds }
+
+  // Auto-save draft on every change (debounced 800ms)
   useEffect(() => {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current)
-    autoSaveRef.current = setTimeout(() => saveDraft(title, rounds), 1500)
+    autoSaveRef.current = setTimeout(() => saveDraft(title, rounds), 800)
     return () => { if (autoSaveRef.current) clearTimeout(autoSaveRef.current) }
   }, [title, rounds])
+
+  // Flush-save the draft when leaving the builder (unmount)
+  useEffect(() => {
+    return () => {
+      if (savedRef.current) return // квиз сохранён — черновик не нужен
+      const { title: t, rounds: r } = latestRef.current
+      // Сохраняем только если есть что сохранять
+      if (t.trim() || r.some(rd => rd.questions.some(q => q.text.trim()))) {
+        saveDraft(t, r)
+      }
+    }
+  }, [])
+
+  // Явный выход «Назад» — сразу сохраняем черновик и уходим
+  const goBack = () => {
+    const { title: t, rounds: r } = latestRef.current
+    if (t.trim() || r.some(rd => rd.questions.some(q => q.text.trim()))) {
+      saveDraft(t, r)
+    }
+    setPhase('dashboard')
+  }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
   const addRound = () => setRounds(r => [...r, makeRound(r.length + 1)])
@@ -162,7 +187,7 @@ export default function QuizBuilderPage() {
     setSaving(true)
     setError('')
 
-    const doSave = async (authToken: string) => {
+    const doSave = async () => {
       const importData = {
         title: title.trim(),
         rounds: rounds.map(r => ({
@@ -182,16 +207,11 @@ export default function QuizBuilderPage() {
         warnings: [],
       }
 
-      await axios.post(
-        `${API_URL}/api/quizzes/import`,
-        { title: title.trim(), data: importData },
-        { headers: { Authorization: `Bearer ${authToken}` } },
-      )
+      await apiClient.post('/api/quizzes/import', { title: title.trim(), data: importData })
 
-      const res = await axios.get(`${API_URL}/api/quizzes`, {
-        headers: { Authorization: `Bearer ${authToken}` },
-      })
-      setQuizzes(res.data)
+      const res = await apiClient.get('/api/quizzes')
+      setQuizzes(asArray(res.data))
+      savedRef.current = true
       clearDraft()
       setPhase('dashboard')
     }
@@ -204,9 +224,13 @@ export default function QuizBuilderPage() {
     }
 
     try {
-      await doSave(authToken)
+      await doSave()
     } catch (e: any) {
-      setError(e.response?.data?.message || e.message || 'Ошибка сохранения')
+      if (e?.response?.status === 401) {
+        setError('Сессия истекла. Вернись на главный экран и войди снова.')
+      } else {
+        setError(getErrorMessage(e, 'Ошибка сохранения'))
+      }
       setSaving(false)
     }
   }
@@ -218,7 +242,7 @@ export default function QuizBuilderPage() {
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <button
-            onClick={() => setPhase('dashboard')}
+            onClick={goBack}
             className="text-white/40 hover:text-white transition text-lg"
           >
             ←
