@@ -284,26 +284,12 @@ export default function QuestionPage() {
         </div>
       )}
 
-      {/* Feedback after answering */}
+      {/* Feedback after answering — НЕ раскрываем правильность до экрана результатов */}
       {answered && (
         <div className="mt-4 text-center">
-          {localCorrect !== null ? (
-            <div>
-              <p className={`text-lg font-bold ${localCorrect ? 'text-green-400' : 'text-red-400'}`}>
-                {localCorrect ? '✓ Правильно!' : '✗ Неправильно'}
-              </p>
-              {localScore > 0 && (
-                <p className="text-[#7c6ded] font-bold mt-1">
-                  +{localScore} очков
-                  {localSpeedBonus > 0 && (
-                    <span className="text-[#22d3ee] text-sm ml-2">(+{localSpeedBonus} за скорость)</span>
-                  )}
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-[#5a6b8a]">Ответ принят! Ждём остальных...</p>
-          )}
+          <p className="text-2xl mb-1">✅</p>
+          <p className="text-white font-semibold">Ответ принят!</p>
+          <p className="text-[#5a6b8a] text-sm mt-0.5">Результат покажем, когда время выйдет</p>
         </div>
       )}
     </div>
