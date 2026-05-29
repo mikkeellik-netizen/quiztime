@@ -1,4 +1,4 @@
-export type ImportQuestionType = 'SINGLE' | 'MULTI' | 'TRUE_FALSE';
+export type ImportQuestionType = 'SINGLE' | 'MULTI' | 'TRUE_FALSE' | 'TEXT';
 
 export interface ImportOption {
   text: string;

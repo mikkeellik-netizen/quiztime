@@ -5,7 +5,7 @@ import { getToken } from '../api/auth'
 
 const DRAFT_KEY = 'quiz_draft'
 
-type QType = 'SINGLE' | 'MULTI' | 'TRUE_FALSE'
+type QType = 'SINGLE' | 'MULTI' | 'TRUE_FALSE' | 'TEXT'
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 
@@ -36,6 +36,12 @@ function defaultOpts(type: QType): BuildOpt[] {
     return [
       { id: uid(), text: 'Верно', isCorrect: true },
       { id: uid(), text: 'Неверно', isCorrect: false },
+    ]
+  }
+  if (type === 'TEXT') {
+    // Принятые варианты ответа — все считаются правильными
+    return [
+      { id: uid(), text: '', isCorrect: true },
     ]
   }
   return [
@@ -173,6 +179,10 @@ export default function QuizBuilderPage() {
       for (const q of r.questions) {
         if (!q.text.trim()) return 'Заполни текст для всех вопросов'
         const filledOpts = q.options.filter(o => o.text.trim())
+        if (q.type === 'TEXT') {
+          if (filledOpts.length < 1) return 'Добавь хотя бы один вариант правильного ответа'
+          continue
+        }
         if (filledOpts.length < 2) return 'Каждый вопрос должен иметь минимум 2 варианта ответа'
         if (!filledOpts.some(o => o.isCorrect)) return 'Отметь правильный ответ для каждого вопроса'
       }
@@ -398,7 +408,7 @@ function RoundCard({
                 {q.text || <span className="text-white/25 italic">Пусто</span>}
               </p>
               <p className="text-white/30 text-xs mt-0.5">
-                {q.type === 'TRUE_FALSE' ? 'Да/Нет' : q.type === 'MULTI' ? 'Несколько' : 'Один ответ'}
+                {q.type === 'TRUE_FALSE' ? 'Да/Нет' : q.type === 'MULTI' ? 'Несколько' : q.type === 'TEXT' ? 'Свой ответ' : 'Один ответ'}
                 {' · '}{q.timerSec}с{' · '}{q.baseScore} оч
               </p>
             </div>
@@ -448,7 +458,14 @@ function QuestionEditor({
   // ─── Type change ────────────────────────────────────────────────────────
   const changeType = (type: QType) => {
     if (type === q.type) return
-    if (type === 'TRUE_FALSE') {
+    if (type === 'TEXT') {
+      // Переходим к свободному ответу: варианты как принятые ответы (все правильные)
+      const kept = q.options.filter(o => o.text.trim()).map(o => ({ ...o, isCorrect: true }))
+      setQ(prev => ({ ...prev, type, options: kept.length ? kept : defaultOpts('TEXT') }))
+    } else if (q.type === 'TEXT') {
+      // Уходим от свободного ответа → свежие варианты
+      setQ(prev => ({ ...prev, type, options: defaultOpts(type) }))
+    } else if (type === 'TRUE_FALSE') {
       setQ(prev => ({ ...prev, type, options: defaultOpts('TRUE_FALSE') }))
     } else if (q.type === 'TRUE_FALSE') {
       // Switching away from TRUE_FALSE → fresh options
@@ -506,9 +523,11 @@ function QuestionEditor({
     }))
   }
 
-  const isValid = q.text.trim() &&
-    q.options.filter(o => o.text.trim()).length >= 2 &&
-    q.options.some(o => o.isCorrect && o.text.trim())
+  const isValid = q.type === 'TEXT'
+    ? !!q.text.trim() && q.options.filter(o => o.text.trim()).length >= 1
+    : !!q.text.trim() &&
+      q.options.filter(o => o.text.trim()).length >= 2 &&
+      q.options.some(o => o.isCorrect && o.text.trim())
 
   // ─── Render ──────────────────────────────────────────────────────────────
   return (
@@ -546,11 +565,12 @@ function QuestionEditor({
         {/* Type selector */}
         <div>
           <label className="text-white/50 text-xs uppercase tracking-widest mb-2 block">Тип ответа</label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {([
               { v: 'SINGLE', label: 'Один ответ' },
               { v: 'MULTI', label: 'Несколько' },
               { v: 'TRUE_FALSE', label: 'Да / Нет' },
+              { v: 'TEXT', label: '✍️ Свой ответ' },
             ] as { v: QType; label: string }[]).map(({ v, label }) => (
               <button
                 key={v}
@@ -617,7 +637,46 @@ function QuestionEditor({
             Варианты ответа
           </label>
 
-          {q.type === 'TRUE_FALSE' ? (
+          {q.type === 'TEXT' ? (
+            /* TEXT: список принятых вариантов ответа (все правильные) */
+            <div className="space-y-2">
+              {q.options.map((opt, oi) => (
+                <div key={opt.id} className="flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-lg shrink-0 bg-green-500/20 border-2 border-green-500/40 text-green-400 flex items-center justify-center text-sm">
+                    ✓
+                  </span>
+                  <input
+                    type="text"
+                    value={opt.text}
+                    onChange={e => setOptText(opt.id, e.target.value)}
+                    placeholder={oi === 0 ? 'Например: Москва' : 'Ещё вариант (синоним, англ., и т.д.)'}
+                    maxLength={120}
+                    className="flex-1 px-3 py-2 rounded-xl bg-[#141e33] border border-white/10 text-white text-sm focus:outline-none focus:border-[#7c6ded] transition"
+                  />
+                  {q.options.length > 1 && (
+                    <button
+                      onClick={() => removeOption(opt.id)}
+                      className="text-white/20 hover:text-red-400 transition shrink-0"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              {q.options.length < 10 && (
+                <button
+                  onClick={addOption}
+                  className="w-full py-2 rounded-xl border border-dashed border-white/15 text-white/35 hover:border-[#7c6ded]/50 hover:text-[#7c6ded] transition text-sm mt-1"
+                >
+                  + Ещё вариант ответа
+                </button>
+              )}
+              <p className="text-white/25 text-xs">
+                Участник вводит ответ сам. Засчитаем любой из вариантов — регистр, ё/е,
+                опечатки и склонения не важны.
+              </p>
+            </div>
+          ) : q.type === 'TRUE_FALSE' ? (
             /* TRUE_FALSE: two big buttons */
             <div className="grid grid-cols-2 gap-3">
               {[

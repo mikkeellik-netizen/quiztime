@@ -12,6 +12,7 @@ export default function QuestionPage() {
     myAnswerIds,
     setMyAnswer,
     setCorrectAnswer,
+    setMyAnswerCorrect,
     setPhase,
     setLeaderboard,
     setTotalScore,
@@ -20,6 +21,7 @@ export default function QuestionPage() {
 
   const [answered, setAnswered] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [textInput, setTextInput] = useState('')
   const [localScore, setLocalScore] = useState(0)
   const [localSpeedBonus, setLocalSpeedBonus] = useState(0)
   const [localCorrect, setLocalCorrect] = useState<boolean | null>(null)
@@ -33,11 +35,13 @@ export default function QuestionPage() {
 
   const isMulti = currentQuestion?.type === 'MULTI'
   const isTrueFalse = currentQuestion?.type === 'TRUE_FALSE'
+  const isText = currentQuestion?.type === 'TEXT'
 
   // Reset per question
   useEffect(() => {
     setAnswered(false)
     setSelectedIds([])
+    setTextInput('')
     setLocalScore(0)
     setLocalSpeedBonus(0)
     setLocalCorrect(null)
@@ -50,10 +54,11 @@ export default function QuestionPage() {
       setLocalScore(data.scoreEarned)
       setLocalSpeedBonus(data.speedBonus ?? 0)
       setLocalCorrect(data.isCorrect)
+      setMyAnswerCorrect(data.isCorrect)
     })
 
-    socket.on('show_answer', (data: { correctOptionIds: string[]; explanation?: string | null }) => {
-      setCorrectAnswer(data.correctOptionIds ?? [], localScore, data.explanation ?? null)
+    socket.on('show_answer', (data: { correctOptionIds: string[]; correctText?: string[]; explanation?: string | null }) => {
+      setCorrectAnswer(data.correctOptionIds ?? [], localScore, data.explanation ?? null, data.correctText ?? [])
       setPhase('show_answer')
     })
 
@@ -78,6 +83,7 @@ export default function QuestionPage() {
       })
       setAnswered(false)
       setSelectedIds([])
+      setTextInput('')
       setLocalScore(0)
       setLocalSpeedBonus(0)
       setLocalCorrect(null)
@@ -119,6 +125,13 @@ export default function QuestionPage() {
     setAnswered(true)
     setMyAnswer(selectedIds)
     getSocket().emit('submit_answer', { optionIds: selectedIds })
+  }
+
+  // TEXT: submit typed answer
+  const submitTextAnswer = () => {
+    if (answered || !textInput.trim()) return
+    setAnswered(true)
+    getSocket().emit('submit_answer', { text: textInput.trim() })
   }
 
   if (!currentQuestion) return null
@@ -166,7 +179,33 @@ export default function QuestionPage() {
       </div>
 
       {/* Options */}
-      {isTrueFalse ? (
+      {isText ? (
+        <div className="space-y-3 flex-1">
+          <input
+            type="text"
+            value={textInput}
+            onChange={(e) => setTextInput(e.target.value)}
+            disabled={answered}
+            autoFocus
+            placeholder="Напиши свой ответ..."
+            maxLength={120}
+            onKeyDown={(e) => e.key === 'Enter' && submitTextAnswer()}
+            className="w-full px-4 py-4 rounded-2xl bg-[#141e33] border-2 border-white/10 text-white text-lg text-center focus:outline-none focus:border-[#7c6ded] transition disabled:opacity-60"
+          />
+          {!answered && (
+            <button
+              onClick={submitTextAnswer}
+              disabled={!textInput.trim()}
+              className="w-full py-4 rounded-2xl bg-[#7c6ded] hover:bg-[#6a5bd4] text-white font-bold text-lg transition disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Ответить
+            </button>
+          )}
+          <p className="text-[#5a6b8a] text-xs text-center">
+            Можно с опечатками — засчитаем близкий ответ
+          </p>
+        </div>
+      ) : isTrueFalse ? (
         <div className="grid grid-cols-2 gap-3 mb-4">
           {[
             { id: currentQuestion.options[0]?.id ?? 'true', text: '✅ ДА' },

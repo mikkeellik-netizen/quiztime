@@ -5,7 +5,9 @@ import { getSocket } from '../socket/socket'
 export default function ShowAnswerPage() {
   const {
     correctAnswerIds,
+    correctTextAnswers,
     myAnswerIds,
+    myAnswerCorrect,
     scoreEarned,
     currentQuestion,
     currentExplanation,
@@ -15,8 +17,11 @@ export default function ShowAnswerPage() {
     setCurrentQuestion,
   } = useGameStore()
 
-  const isCorrect =
-    myAnswerIds.length > 0 && myAnswerIds.every((id) => correctAnswerIds.includes(id))
+  const isText = currentQuestion?.type === 'TEXT'
+  const answeredSomething = isText ? myAnswerCorrect !== null : myAnswerIds.length > 0
+  const isCorrect = isText
+    ? myAnswerCorrect === true
+    : myAnswerIds.length > 0 && myAnswerIds.every((id) => correctAnswerIds.includes(id))
 
   useEffect(() => {
     const socket = getSocket()
@@ -63,11 +68,11 @@ export default function ShowAnswerPage() {
     <div className="flex flex-col items-center justify-center min-h-screen px-6">
       <div className="w-full max-w-sm text-center">
         <div className="text-6xl mb-4">
-          {myAnswerIds.length === 0 ? '⏱️' : isCorrect ? '🎉' : '😔'}
+          {!answeredSomething ? '⏱️' : isCorrect ? '🎉' : '😔'}
         </div>
 
         <h2 className="text-2xl font-bold text-white mb-2">
-          {myAnswerIds.length === 0
+          {!answeredSomething
             ? 'Время вышло'
             : isCorrect
             ? 'Правильно!'
@@ -80,17 +85,29 @@ export default function ShowAnswerPage() {
 
         {/* Correct answer block */}
         <div className="bg-[#141e33] rounded-2xl px-6 py-4 mb-4 border border-green-500/20">
-          <p className="text-[#5a6b8a] text-sm mb-2">Правильный ответ:</p>
-          {correctOptions.map((opt) => (
-            <p key={opt.id} className="text-green-400 font-semibold text-lg">
-              ✓ {opt.text}
-            </p>
-          ))}
-          {correctAnswerIds.includes('true') && (
-            <p className="text-green-400 font-semibold text-lg">✅ ДА</p>
-          )}
-          {correctAnswerIds.includes('false') && (
-            <p className="text-green-400 font-semibold text-lg">❌ НЕТ</p>
+          <p className="text-[#5a6b8a] text-sm mb-2">
+            {isText && correctTextAnswers.length > 1 ? 'Принятые ответы:' : 'Правильный ответ:'}
+          </p>
+          {isText ? (
+            correctTextAnswers.map((t, i) => (
+              <p key={i} className="text-green-400 font-semibold text-lg">
+                ✓ {t}
+              </p>
+            ))
+          ) : (
+            <>
+              {correctOptions.map((opt) => (
+                <p key={opt.id} className="text-green-400 font-semibold text-lg">
+                  ✓ {opt.text}
+                </p>
+              ))}
+              {correctAnswerIds.includes('true') && (
+                <p className="text-green-400 font-semibold text-lg">✅ ДА</p>
+              )}
+              {correctAnswerIds.includes('false') && (
+                <p className="text-green-400 font-semibold text-lg">❌ НЕТ</p>
+              )}
+            </>
           )}
         </div>
 

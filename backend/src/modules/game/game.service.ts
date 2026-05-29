@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { v4 as uuidv4 } from 'uuid';
+import { isTextAnswerCorrect } from '../../shared/utils/answer-match';
 
 interface ParticipantState {
   id: string;
@@ -40,7 +41,8 @@ interface SessionState {
   participantsByToken: Map<string, string>;     // reconnectToken → participantId
   questions: QuestionData[];
   currentQuestionIndex: number;
-  answers: Map<string, Map<string, string[]>>; // questionId → participantId → optionIds
+  answers: Map<string, Map<string, string[]>>; // questionId → participantId → optionIds (для TEXT — пусто)
+  answeredSet: Map<string, Set<string>>;        // questionId → participantId (универсальный учёт ответивших)
   quizTitle: string;
   questionStartedAt: number | null;
   settings: SessionSettings;
@@ -125,6 +127,7 @@ export class GameService {
       questions,
       currentQuestionIndex: -1,
       answers: new Map(),
+      answeredSet: new Map(),
       quizTitle: dbSession.quiz.title,
       questionStartedAt: null,
       settings: {
@@ -263,13 +266,16 @@ export class GameService {
   async submitAnswer(
     code: string,
     participantId: string,
-    optionIds: string[],
+    payload: { optionIds?: string[]; text?: string },
   ): Promise<{ isCorrect: boolean; scoreEarned: number; speedBonus: number } | null> {
     const session = this.sessions.get(code);
     if (!session || session.currentQuestionIndex < 0) return null;
 
     const question = session.questions[session.currentQuestionIndex];
     if (!question) return null;
+
+    const optionIds = payload.optionIds ?? [];
+    const textAnswer = (payload.text ?? '').trim();
 
     // Late answer check (1.5s grace period after timer expires)
     const now = Date.now();
@@ -278,24 +284,39 @@ export class GameService {
       if (now > expiresAt + 1500) return null;
     }
 
-    // Deduplicate
+    // Deduplicate (универсально для всех типов)
+    const answered =
+      session.answeredSet.get(question.id) ?? new Set<string>();
+    if (answered.has(participantId)) return null;
+    answered.add(participantId);
+    session.answeredSet.set(question.id, answered);
+
+    // Сохраняем выбранные опции (для analytics/show_answer); для TEXT — пусто
     const questionAnswers =
       session.answers.get(question.id) ?? new Map<string, string[]>();
-    if (questionAnswers.has(participantId)) return null;
     questionAnswers.set(participantId, optionIds);
     session.answers.set(question.id, questionAnswers);
 
     // Correctness
-    const correctIds = new Set(
-      question.options.filter((o) => o.isCorrect).map((o) => o.id),
-    );
     let isCorrect = false;
-    if (question.type === 'MULTI') {
+    if (question.type === 'TEXT') {
+      const accepted = question.options
+        .filter((o) => o.isCorrect)
+        .map((o) => o.text);
+      isCorrect = isTextAnswerCorrect(textAnswer, accepted);
+    } else if (question.type === 'MULTI') {
+      const correctIds = new Set(
+        question.options.filter((o) => o.isCorrect).map((o) => o.id),
+      );
       isCorrect =
         optionIds.length === correctIds.size &&
+        optionIds.length > 0 &&
         optionIds.every((id) => correctIds.has(id));
     } else {
       // SINGLE or TRUE_FALSE
+      const correctIds = new Set(
+        question.options.filter((o) => o.isCorrect).map((o) => o.id),
+      );
       isCorrect = optionIds.length === 1 && correctIds.has(optionIds[0]);
     }
 
@@ -336,7 +357,10 @@ export class GameService {
           scoreEarned,
           answeredAtMs: BigInt(now),
           timeTakenMs,
-          selectedOptions: { connect: optionIds.map((id) => ({ id })) },
+          textAnswer: question.type === 'TEXT' ? textAnswer : null,
+          ...(optionIds.length > 0
+            ? { selectedOptions: { connect: optionIds.map((id) => ({ id })) } }
+            : {}),
         },
       });
       if (participant) {
@@ -370,11 +394,17 @@ export class GameService {
     const correctOptionIds = question.options
       .filter((o) => o.isCorrect)
       .map((o) => o.id);
-    const questionAnswers = session.answers.get(question.id);
-    const answerCount = questionAnswers ? questionAnswers.size : 0;
+    // Для TEXT отдаём принятые варианты ответа (чтобы показать на экране результата)
+    const correctText =
+      question.type === 'TEXT'
+        ? question.options.filter((o) => o.isCorrect).map((o) => o.text)
+        : [];
+    const answered = session.answeredSet.get(question.id);
+    const answerCount = answered ? answered.size : 0;
 
     return {
       correctOptionIds,
+      correctText,
       answerCount,
       participantCount: session.participants.size,
       explanation: question.explanation,
@@ -484,10 +514,13 @@ export class GameService {
               type: currentQuestion.type,
               timerSec: currentQuestion.timerSec,
               baseScore: currentQuestion.baseScore,
-              options: currentQuestion.options.map((o) => ({
-                id: o.id,
-                text: o.text,
-              })),
+              options:
+                currentQuestion.type === 'TEXT'
+                  ? []
+                  : currentQuestion.options.map((o) => ({
+                      id: o.id,
+                      text: o.text,
+                    })),
               expiresAt: session.questionStartedAt
                 ? new Date(
                     session.questionStartedAt + currentQuestion.timerSec * 1000,

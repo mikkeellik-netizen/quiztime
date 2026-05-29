@@ -11,6 +11,7 @@ export default function HostGamePage() {
     questionIndex,
     totalQuestions,
     correctOptionIds,
+    currentCorrectText,
     answerCount,
     participantCount,
     leaderboard,
@@ -40,7 +41,7 @@ export default function HostGamePage() {
     })
 
     socket.on('show_answer', (data: any) => {
-      store.setShowAnswer(data.correctOptionIds ?? [], data.answerCount ?? 0, data.participantCount ?? 0, data.explanation ?? null)
+      store.setShowAnswer(data.correctOptionIds ?? [], data.answerCount ?? 0, data.participantCount ?? 0, data.explanation ?? null, data.correctText ?? [])
     })
 
     socket.on('show_leaderboard', (data: any) => {
@@ -115,23 +116,37 @@ export default function HostGamePage() {
           {currentQuestion && (
             <div className="bg-[#141e33] rounded-2xl p-4 border border-white/10 mb-4">
               <p className="text-white/60 text-sm mb-3">{currentQuestion.text}</p>
-              <div className="grid grid-cols-2 gap-2">
-                {currentQuestion.options.map((opt) => {
-                  const correct = correctOptionIds.includes(opt.id)
-                  return (
+              {currentQuestion.type === 'TEXT' ? (
+                <div className="space-y-2">
+                  <p className="text-white/40 text-xs uppercase tracking-widest">Принятые ответы</p>
+                  {currentCorrectText.map((t, i) => (
                     <div
-                      key={opt.id}
-                      className={`rounded-xl px-3 py-2.5 text-sm font-medium border ${
-                        correct
-                          ? 'bg-green-500/20 border-green-500/40 text-green-400'
-                          : 'bg-white/5 border-white/10 text-white/40'
-                      }`}
+                      key={i}
+                      className="rounded-xl px-3 py-2.5 text-sm font-medium border bg-green-500/20 border-green-500/40 text-green-400"
                     >
-                      {correct && '✓ '}{opt.text}
+                      ✓ {t}
                     </div>
-                  )
-                })}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {currentQuestion.options.map((opt) => {
+                    const correct = correctOptionIds.includes(opt.id)
+                    return (
+                      <div
+                        key={opt.id}
+                        className={`rounded-xl px-3 py-2.5 text-sm font-medium border ${
+                          correct
+                            ? 'bg-green-500/20 border-green-500/40 text-green-400'
+                            : 'bg-white/5 border-white/10 text-white/40'
+                        }`}
+                      >
+                        {correct && '✓ '}{opt.text}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
           {currentExplanation && (
@@ -169,16 +184,23 @@ export default function HostGamePage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mb-6">
-              {currentQuestion.options.map((opt, i) => (
-                <div
-                  key={opt.id}
-                  className={`rounded-xl px-3 py-3 border text-sm text-white/80 ${COLORS[i] ?? 'bg-white/10 border-white/20'}`}
-                >
-                  {opt.text}
-                </div>
-              ))}
-            </div>
+            {currentQuestion.type === 'TEXT' ? (
+              <div className="bg-[#141e33] rounded-2xl px-4 py-6 mb-6 border border-white/10 text-center">
+                <p className="text-3xl mb-2">✍️</p>
+                <p className="text-white/50 text-sm">Участники вводят ответ вручную</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 mb-6">
+                {currentQuestion.options.map((opt, i) => (
+                  <div
+                    key={opt.id}
+                    className={`rounded-xl px-3 py-3 border text-sm text-white/80 ${COLORS[i] ?? 'bg-white/10 border-white/20'}`}
+                  >
+                    {opt.text}
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
 

@@ -88,6 +88,7 @@ enum QuestionType {
   SINGLE
   MULTI
   TRUE_FALSE
+  TEXT
 }
 
 // ── Варианты ответов ──────────────────────────────────────────────
@@ -194,6 +195,7 @@ model ParticipantAnswer {
   question      Question        @relation(fields: [questionId], references: [id])
 
   selectedOptions AnswerOption[] @relation("SelectedOptions")
+  textAnswer      String?        @map("text_answer")
   isCorrect       Boolean
   scoreEarned     Int            @map("score_earned")
   answeredAtMs    BigInt         @map("answered_at_ms")

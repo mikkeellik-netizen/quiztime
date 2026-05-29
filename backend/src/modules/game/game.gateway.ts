@@ -46,7 +46,11 @@ export class GameGateway implements OnGatewayDisconnect {
       questionId: question.id,
       question: question.text,
       type: question.type,
-      options: question.options.map((o) => ({ id: o.id, text: o.text })),
+      // Для TEXT варианты НЕ отправляем участникам — они вводят ответ сами
+      options:
+        question.type === 'TEXT'
+          ? []
+          : question.options.map((o) => ({ id: o.id, text: o.text })),
       timerSec: question.timerSec,
       startedAt: new Date(startedAt).toISOString(),
       expiresAt: new Date(startedAt + question.timerSec * 1000).toISOString(),
@@ -183,6 +187,7 @@ export class GameGateway implements OnGatewayDisconnect {
     data: {
       optionIds?: string[];
       selectedOptionIds?: string[];
+      text?: string;
       questionId?: string;
     },
   ) {
@@ -191,11 +196,10 @@ export class GameGateway implements OnGatewayDisconnect {
     if (!participantId || !code) return;
 
     const optionIds = data.optionIds ?? data.selectedOptionIds ?? [];
-    const result = await this.gameService.submitAnswer(
-      code,
-      participantId,
+    const result = await this.gameService.submitAnswer(code, participantId, {
       optionIds,
-    );
+      text: data.text,
+    });
 
     if (result) {
       client.emit('answer_result', {
@@ -263,6 +267,7 @@ export class GameGateway implements OnGatewayDisconnect {
 
     this.server.to(code).emit('show_answer', {
       correctOptionIds: result.correctOptionIds,
+      correctText: result.correctText ?? [],
       answerCount: result.answerCount,
       participantCount: result.participantCount,
       explanation: result.explanation ?? null,

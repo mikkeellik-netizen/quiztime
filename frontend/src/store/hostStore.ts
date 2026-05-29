@@ -42,6 +42,7 @@ interface HostState {
   questionIndex: number
   totalQuestions: number
   correctOptionIds: string[]
+  currentCorrectText: string[]
   answerCount: number
   currentExplanation: string | null
   leaderboard: LeaderboardEntry[]
@@ -53,7 +54,7 @@ interface HostState {
   setGame: (code: string, title: string) => void
   addParticipant: (displayName: string, count: number) => void
   setCurrentQuestion: (q: HostQuestion, index: number, total: number) => void
-  setShowAnswer: (correctIds: string[], answerCount: number, participantCount: number, explanation?: string | null) => void
+  setShowAnswer: (correctIds: string[], answerCount: number, participantCount: number, explanation?: string | null, correctText?: string[]) => void
   setLeaderboard: (lb: LeaderboardEntry[]) => void
   reset: () => void
 }
@@ -71,6 +72,7 @@ export const useHostStore = create<HostState>((set) => ({
   questionIndex: 0,
   totalQuestions: 0,
   correctOptionIds: [],
+  currentCorrectText: [],
   answerCount: 0,
   currentExplanation: null,
   leaderboard: [],
@@ -84,8 +86,8 @@ export const useHostStore = create<HostState>((set) => ({
     set((s) => ({ participantList: [...s.participantList, displayName], participantCount: count })),
   setCurrentQuestion: (currentQuestion, questionIndex, totalQuestions) =>
     set({ currentQuestion, questionIndex, totalQuestions, correctOptionIds: [], answerCount: 0, gamePhase: 'question' }),
-  setShowAnswer: (correctOptionIds, answerCount, participantCount, explanation = null) =>
-    set({ correctOptionIds, answerCount, participantCount, currentExplanation: explanation ?? null, gamePhase: 'show_answer' }),
+  setShowAnswer: (correctOptionIds, answerCount, participantCount, explanation = null, correctText = []) =>
+    set({ correctOptionIds, answerCount, participantCount, currentExplanation: explanation ?? null, currentCorrectText: correctText ?? [], gamePhase: 'show_answer' }),
   setLeaderboard: (leaderboard) => set({ leaderboard, gamePhase: 'show_leaderboard' }),
   reset: () =>
     set({
