@@ -411,33 +411,52 @@ export class GameService {
     };
   }
 
+  private avgMs(p: ParticipantState): number {
+    return p.answerCount > 0
+      ? Math.round(p.totalAnswerMs / p.answerCount)
+      : 999999;
+  }
+
+  /** Все участники, отсортированные по рейтингу (score → correctCount → avgMs). */
+  private sortedParticipants(session: SessionState): ParticipantState[] {
+    return Array.from(session.participants.values()).sort(
+      (a, b) =>
+        b.score - a.score ||
+        b.correctCount - a.correctCount ||
+        this.avgMs(a) - this.avgMs(b),
+    );
+  }
+
   getLeaderboard(code: string) {
     const session = this.sessions.get(code);
     if (!session) return [];
 
-    return Array.from(session.participants.values())
-      .sort(
-        (a, b) =>
-          b.score - a.score ||
-          b.correctCount - a.correctCount ||
-          (a.answerCount > 0
-            ? Math.round(a.totalAnswerMs / a.answerCount)
-            : 999999) -
-            (b.answerCount > 0
-              ? Math.round(b.totalAnswerMs / b.answerCount)
-              : 999999),
-      )
+    return this.sortedParticipants(session)
       .slice(0, 50)
       .map((p, i) => ({
         rank: i + 1,
         name: p.displayName,
         score: p.score,
         correctCount: p.correctCount,
-        avgAnswerMs:
-          p.answerCount > 0
-            ? Math.round(p.totalAnswerMs / p.answerCount)
-            : 0,
+        avgAnswerMs: p.answerCount > 0 ? Math.round(p.totalAnswerMs / p.answerCount) : 0,
       }));
+  }
+
+  /**
+   * Полный рейтинг с socketId каждого участника — для персональных
+   * уведомлений о месте (когда участник вне топа).
+   */
+  getFullRanking(code: string) {
+    const session = this.sessions.get(code);
+    if (!session) return [];
+
+    return this.sortedParticipants(session).map((p, i) => ({
+      participantId: p.id,
+      socketId: p.socketId,
+      rank: i + 1,
+      name: p.displayName,
+      score: p.score,
+    }));
   }
 
   nextQuestion(code: string) {

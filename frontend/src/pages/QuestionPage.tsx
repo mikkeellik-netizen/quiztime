@@ -16,6 +16,8 @@ export default function QuestionPage() {
     setPhase,
     setLeaderboard,
     setTotalScore,
+    setTotalPlayers,
+    setMyStanding,
     setCurrentQuestion,
   } = useGameStore()
 
@@ -57,15 +59,22 @@ export default function QuestionPage() {
       setMyAnswerCorrect(data.isCorrect)
     })
 
-    socket.on('show_answer', (data: { correctOptionIds: string[]; correctText?: string[]; explanation?: string | null }) => {
+    socket.on('show_answer', (data: any) => {
       setCorrectAnswer(data.correctOptionIds ?? [], localScore, data.explanation ?? null, data.correctText ?? [])
+      setLeaderboard(data.top ?? [])
+      setTotalPlayers(data.totalPlayers ?? 0)
       setPhase('show_answer')
+    })
+
+    socket.on('your_standing', (data: { rank: number; score: number }) => {
+      setMyStanding(data)
     })
 
     socket.on('show_leaderboard', (data: any) => {
       setLeaderboard(data.top ?? [])
-      setTotalScore(data.myScore ?? 0)
-      setPhase('leaderboard')
+      setTotalPlayers(data.totalPlayers ?? 0)
+      // Совмещённый экран: остаёмся на показе ответа+рейтинга
+      setPhase('show_answer')
     })
 
     socket.on('question_start', (data: any) => {
@@ -97,6 +106,7 @@ export default function QuestionPage() {
     return () => {
       socket.off('answer_result')
       socket.off('show_answer')
+      socket.off('your_standing')
       socket.off('show_leaderboard')
       socket.off('question_start')
       socket.off('game_finished')

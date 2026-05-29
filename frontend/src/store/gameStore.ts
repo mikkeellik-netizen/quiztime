@@ -39,6 +39,9 @@ interface GameState {
   currentExplanation: string | null    // объяснение к ответу
   participants: number
   gameTitle: string
+  // Совмещённый экран ответа+рейтинга
+  totalPlayers: number
+  myStanding: { rank: number; score: number } | null
 
   setPhase: (phase: GamePhase) => void
   setGameCode: (code: string) => void
@@ -49,6 +52,8 @@ interface GameState {
   setMyAnswer: (ids: string[]) => void
   setMyAnswerCorrect: (correct: boolean | null) => void
   setLeaderboard: (lb: LeaderboardEntry[]) => void
+  setTotalPlayers: (n: number) => void
+  setMyStanding: (s: { rank: number; score: number } | null) => void
   setParticipants: (n: number) => void
   setTotalScore: (s: number) => void
   setGameTitle: (t: string) => void
@@ -72,19 +77,23 @@ export const useGameStore = create<GameState>((set) => ({
   currentExplanation: null,
   participants: 0,
   gameTitle: 'QuizTime',
+  totalPlayers: 0,
+  myStanding: null,
 
   setPhase: (phase) => set({ phase }),
   setGameCode: (gameCode) => set({ gameCode }),
   setParticipantName: (participantName) => set({ participantName }),
   setReconnectToken: (reconnectToken) => set({ reconnectToken }),
   setCurrentQuestion: (currentQuestion) =>
-    set({ currentQuestion, myAnswerIds: [], correctAnswerIds: [], correctTextAnswers: [], myAnswerCorrect: null, scoreEarned: 0, currentExplanation: null }),
+    set({ currentQuestion, myAnswerIds: [], correctAnswerIds: [], correctTextAnswers: [], myAnswerCorrect: null, scoreEarned: 0, currentExplanation: null, myStanding: null }),
   setCorrectAnswer: (correctAnswerIds, scoreEarned, explanation = null, correctText = []) =>
     set({ correctAnswerIds, scoreEarned, currentExplanation: explanation ?? null, correctTextAnswers: correctText ?? [] }),
   setMyAnswer: (myAnswerIds) => set({ myAnswerIds }),
   setMyAnswerCorrect: (myAnswerCorrect) => set({ myAnswerCorrect }),
   setLeaderboard: (leaderboard) =>
     set((state) => ({ prevLeaderboard: state.leaderboard, leaderboard })),
+  setTotalPlayers: (totalPlayers) => set({ totalPlayers }),
+  setMyStanding: (myStanding) => set({ myStanding }),
   setParticipants: (participants) => set({ participants }),
   setTotalScore: (totalScore) => set({ totalScore }),
   setGameTitle: (gameTitle) => set({ gameTitle }),

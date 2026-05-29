@@ -360,13 +360,23 @@ export class GameGateway implements OnGatewayDisconnect {
     if (!result) return;
 
     this.phase.set(code, 'answer');
+    const ranking = this.gameService.getFullRanking(code);
+    const top = ranking.slice(0, 10).map((r) => ({
+      rank: r.rank,
+      name: r.name,
+      score: r.score,
+    }));
+
     this.server.to(code).emit('show_answer', {
       correctOptionIds: result.correctOptionIds,
       correctText: result.correctText ?? [],
       answerCount: result.answerCount,
       participantCount: result.participantCount,
       explanation: result.explanation ?? null,
+      top,
+      totalPlayers: ranking.length,
     });
+    this.emitStandings(ranking);
 
     if (this.paused.has(code)) return; // на паузе остаёмся на экране ответа
 
@@ -383,7 +393,12 @@ export class GameGateway implements OnGatewayDisconnect {
   private async emitShowLeaderboard(code: string) {
     this.phase.set(code, 'leaderboard');
     const leaderboard = this.gameService.getLeaderboard(code);
-    this.server.to(code).emit('show_leaderboard', { top: leaderboard });
+    const ranking = this.gameService.getFullRanking(code);
+    this.server.to(code).emit('show_leaderboard', {
+      top: leaderboard,
+      totalPlayers: ranking.length,
+    });
+    this.emitStandings(ranking);
 
     if (this.paused.has(code)) return; // на паузе остаёмся на рейтинге
 
@@ -424,6 +439,19 @@ export class GameGateway implements OnGatewayDisconnect {
     const leaderboard = this.gameService.getLeaderboard(code);
     await this.gameService.markFinished(code);
     this.server.to(code).emit('game_finished', { leaderboard });
+  }
+
+  /** Шлём каждому участнику его персональное место (важно, когда он вне топа). */
+  private emitStandings(
+    ranking: { socketId: string; rank: number; score: number }[],
+  ) {
+    for (const r of ranking) {
+      if (r.socketId) {
+        this.server
+          .to(r.socketId)
+          .emit('your_standing', { rank: r.rank, score: r.score });
+      }
+    }
   }
 
   private clearAllTimers(code: string) {
