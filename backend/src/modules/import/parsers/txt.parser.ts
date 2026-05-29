@@ -11,6 +11,7 @@ const TYPE_MAP: Record<string, ImportQuestionType> = {
   'несколько': 'MULTI', 'multi': 'MULTI', 'multiple': 'MULTI', 'мульти': 'MULTI',
   'да-нет': 'TRUE_FALSE', 'да/нет': 'TRUE_FALSE', 'true_false': 'TRUE_FALSE',
   'true/false': 'TRUE_FALSE', 'tf': 'TRUE_FALSE', 'да нет': 'TRUE_FALSE',
+  'свой': 'TEXT', 'свой ответ': 'TEXT', 'текст': 'TEXT', 'text': 'TEXT', 'ввод': 'TEXT',
 };
 
 function normalizeType(raw: string): ImportQuestionType | null {
@@ -32,9 +33,19 @@ function buildOptions(
     };
   }
 
-  const filled = [1, 2, 3, 4]
+  const filled = [1, 2, 3, 4, 5, 6]
     .map((i) => variants.get(i))
     .filter((v): v is string => !!v);
+
+  if (type === 'TEXT') {
+    // Свободный ответ: все варианты — принятые ответы (isCorrect=true)
+    if (filled.length < 1) {
+      return { options: [], error: 'Для типа «Свой ответ» нужен минимум 1 вариант' };
+    }
+    return {
+      options: filled.map((text, i) => ({ text, isCorrect: true, orderIndex: i + 1 })),
+    };
+  }
 
   if (filled.length < 2) {
     return { options: [], error: 'Нужно минимум 2 варианта ответа' };
@@ -80,6 +91,18 @@ export function parseTxt(content: string): QuizImportResult {
   const warnings: string[] = [];
   let blockIndex = 0;
 
+  // Название квиза: первая строка вида "НАЗВАНИЕ: ..." / "TITLE: ..." (вне комментариев)
+  let title = '';
+  for (const raw of content.split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const m = line.match(/^(?:НАЗВАНИЕ|TITLE)\s*:\s*(.+)$/i);
+    if (m) {
+      title = m[1].trim();
+      break;
+    }
+  }
+
   // Разбиваем на блоки по "---"
   const blocks = content.split(/^---\s*$/m);
 
@@ -110,6 +133,9 @@ export function parseTxt(content: string): QuizImportResult {
     const scoreRaw    = kv.get('ОЧКИ')       ?? kv.get('SCORE')       ?? '';
     const explanation = kv.get('ОБЪЯСНЕНИЕ') ?? kv.get('EXPLANATION') ?? '';
 
+    // Пропускаем блоки без вопроса (например, блок только с НАЗВАНИЕ)
+    if (!roundTitle && !questionTxt && !typeRaw) continue;
+
     if (!roundTitle) {
       errors.push({ row: blockIndex, field: 'РАУНД', message: 'Не указан раунд' });
       continue;
@@ -128,12 +154,13 @@ export function parseTxt(content: string): QuizImportResult {
       errors.push({
         row: blockIndex,
         field: 'ТИП',
-        message: `Неизвестный тип: "${typeRaw}". Допустимые: ОДИН, НЕСКОЛЬКО, ДА-НЕТ`,
+        message: `Неизвестный тип: "${typeRaw}". Допустимые: ОДИН, НЕСКОЛЬКО, ДА-НЕТ, СВОЙ`,
       });
       continue;
     }
 
-    if (!correctRaw) {
+    // Для «Свой ответ» поле ПРАВИЛЬНЫЙ не требуется (ответы — в ВАРИАНТ_n)
+    if (!correctRaw && type !== 'TEXT') {
       errors.push({ row: blockIndex, field: 'ПРАВИЛЬНЫЙ', message: 'Не указан правильный ответ' });
       continue;
     }
@@ -142,7 +169,7 @@ export function parseTxt(content: string): QuizImportResult {
     const baseScore = scoreRaw ? parseInt(scoreRaw, 10) : 200;
 
     const variants = new Map<number, string>();
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 1; i <= 6; i++) {
       const v =
         kv.get(`ВАРИАНТ_${i}`) ??
         kv.get(`VARIANT_${i}`) ??
@@ -177,5 +204,5 @@ export function parseTxt(content: string): QuizImportResult {
     warnings.push('Файл не содержит ни одного вопроса');
   }
 
-  return { title: '', rounds, errors, warnings };
+  return { title, rounds, errors, warnings };
 }

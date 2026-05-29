@@ -12,6 +12,7 @@ const TYPE_MAP: Record<string, ImportQuestionType> = {
   'несколько': 'MULTI', 'multi': 'MULTI', 'multiple': 'MULTI', 'мульти': 'MULTI',
   'да-нет': 'TRUE_FALSE', 'да/нет': 'TRUE_FALSE', 'true_false': 'TRUE_FALSE',
   'true/false': 'TRUE_FALSE', 'tf': 'TRUE_FALSE', 'да нет': 'TRUE_FALSE',
+  'свой': 'TEXT', 'свой ответ': 'TEXT', 'текст': 'TEXT', 'text': 'TEXT', 'ввод': 'TEXT',
 };
 
 function normalizeType(raw: string): ImportQuestionType | null {
@@ -41,6 +42,16 @@ function buildOptions(
   }
 
   const filled = optTexts.filter((t) => t !== '');
+
+  if (type === 'TEXT') {
+    if (filled.length < 1) {
+      return { options: [], error: 'Для типа «Свой ответ» нужен минимум 1 вариант' };
+    }
+    return {
+      options: filled.map((text, i) => ({ text, isCorrect: true, orderIndex: i + 1 })),
+    };
+  }
+
   if (filled.length < 2) {
     return { options: [], error: 'Нужно минимум 2 варианта ответа' };
   }
@@ -95,8 +106,18 @@ export async function parseExcel(buffer: Buffer): Promise<QuizImportResult> {
   const errors: { row: number; field: string; message: string }[] = [];
   const warnings: string[] = [];
 
+  // Название квиза: строка 1, ячейка B1 (рядом с подписью "Название квиза:" в A1).
+  // Поддерживаем и старый формат (без строки названия) — тогда title пустой.
+  let title = '';
+  const a1 = cellStr(sheet.getCell('A1')).toLowerCase();
+  let headerRowNum = 1;
+  if (a1.includes('назван') || a1.includes('title')) {
+    title = cellStr(sheet.getCell('B1'));
+    headerRowNum = 2;
+  }
+
   sheet.eachRow((row, rowNum) => {
-    if (rowNum === 1) return; // пропускаем заголовок
+    if (rowNum <= headerRowNum) return; // пропускаем строку названия и заголовок
 
     const roundTitle  = cellStr(row.getCell(1));  // A
     const questionTxt = cellStr(row.getCell(2));  // B
@@ -131,12 +152,13 @@ export async function parseExcel(buffer: Buffer): Promise<QuizImportResult> {
       errors.push({
         row: rowNum,
         field: 'Тип',
-        message: `Неизвестный тип: "${typeRaw}". Допустимые: ОДИН, НЕСКОЛЬКО, ДА-НЕТ`,
+        message: `Неизвестный тип: "${typeRaw}". Допустимые: ОДИН, НЕСКОЛЬКО, ДА-НЕТ, СВОЙ`,
       });
       return;
     }
 
-    if (!correctRaw) {
+    // Для «Свой ответ» поле «Правильный» не требуется (ответы — в колонках вариантов)
+    if (!correctRaw && type !== 'TEXT') {
       errors.push({ row: rowNum, field: 'Правильный', message: 'Не указан правильный ответ' });
       return;
     }
@@ -180,8 +202,8 @@ export async function parseExcel(buffer: Buffer): Promise<QuizImportResult> {
 
   const rounds = Array.from(roundsMap.values());
   if (rounds.length === 0 && errors.length === 0) {
-    warnings.push('Файл не содержит ни одного вопроса (пропущен заголовок в строке 1)');
+    warnings.push('Файл не содержит ни одного вопроса');
   }
 
-  return { title: '', rounds, errors, warnings };
+  return { title, rounds, errors, warnings };
 }
