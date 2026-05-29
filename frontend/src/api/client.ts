@@ -8,7 +8,13 @@ export const apiClient: AxiosInstance = axios.create({
   timeout: 15000,
 })
 
-// Auto-attach Bearer token
+// Увеличиваем таймаут для загрузки файлов (парсинг Excel может быть медленным)
+export const apiClientWithLongTimeout: AxiosInstance = axios.create({
+  baseURL: API_URL,
+  timeout: 60000, // 60 сек для file upload
+})
+
+// Auto-attach Bearer token (apiClient)
 apiClient.interceptors.request.use((config) => {
   const token = loadSavedToken()
   if (token && config.headers) {
@@ -17,8 +23,28 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
-// Auto-clear token on 401
+// Auto-attach Bearer token (apiClientWithLongTimeout)
+apiClientWithLongTimeout.interceptors.request.use((config) => {
+  const token = loadSavedToken()
+  if (token && config.headers) {
+    ;(config.headers as any).Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// Auto-clear token on 401 (apiClient)
 apiClient.interceptors.response.use(
+  (res) => res,
+  (err: AxiosError) => {
+    if (err.response?.status === 401) {
+      clearSavedToken()
+    }
+    return Promise.reject(err)
+  },
+)
+
+// Auto-clear token on 401 (apiClientWithLongTimeout)
+apiClientWithLongTimeout.interceptors.response.use(
   (res) => res,
   (err: AxiosError) => {
     if (err.response?.status === 401) {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useHostStore } from '../store/hostStore'
 import { resetSocket } from '../socket/socket'
-import { apiClient, asArray, getErrorMessage } from '../api/client'
+import { apiClient, apiClientWithLongTimeout, asArray, getErrorMessage } from '../api/client'
 import { clearSavedToken } from '../api/auth'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
@@ -47,7 +47,7 @@ export default function HostDashboardPage() {
     try {
       const form = new FormData()
       form.append('file', file)
-      const parsed = await apiClient.post('/api/import/upload', form)
+      const parsed = await apiClientWithLongTimeout.post('/api/import/upload', form)
       const data = parsed.data
 
       if (Array.isArray(data?.errors) && data.errors.length > 0) {
