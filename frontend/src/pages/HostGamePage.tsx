@@ -1,10 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useHostStore } from '../store/hostStore'
 import { getSocket } from '../socket/socket'
 import { useServerTimer } from '../hooks/useServerTimer'
 
 export default function HostGamePage() {
   const store = useHostStore()
+  const [paused, setPaused] = useState(false)
   const {
     gamePhase,
     currentQuestion,
@@ -54,16 +55,56 @@ export default function HostGamePage() {
       setPhase('finished')
     })
 
+    socket.on('game_paused', () => setPaused(true))
+    socket.on('game_resumed', () => setPaused(false))
+
     return () => {
       socket.off('question_start')
       socket.off('show_answer')
       socket.off('show_leaderboard')
       socket.off('game_finished')
+      socket.off('game_paused')
+      socket.off('game_resumed')
     }
   }, [])
 
   const nextQuestion = () => getSocket().emit('next_question')
+  const prevQuestion = () => getSocket().emit('host_prev_question')
+  const skipPhase = () => getSocket().emit('host_skip')
+  const togglePause = () => getSocket().emit(paused ? 'host_resume' : 'host_pause')
   const endGame = () => getSocket().emit('end_game')
+
+  // Панель ручного управления ведущего (доступна на любой фазе)
+  const controlBar = (
+    <div className="flex items-center gap-2 mb-3">
+      <button
+        onClick={prevQuestion}
+        disabled={questionIndex <= 1}
+        className="w-12 h-12 rounded-xl bg-[#141e33] border border-white/10 text-white/70 hover:text-white hover:bg-white/10 transition disabled:opacity-30 text-lg"
+        title="Предыдущий вопрос"
+      >
+        ⏮
+      </button>
+      <button
+        onClick={togglePause}
+        className={`flex-1 h-12 rounded-xl font-bold text-sm transition border ${
+          paused
+            ? 'bg-green-500/20 border-green-500/40 text-green-300 hover:bg-green-500/30'
+            : 'bg-[#141e33] border-white/10 text-white/70 hover:text-white hover:bg-white/10'
+        }`}
+        title={paused ? 'Продолжить' : 'Пауза'}
+      >
+        {paused ? '▶ Продолжить' : '⏸ Пауза'}
+      </button>
+      <button
+        onClick={skipPhase}
+        className="w-12 h-12 rounded-xl bg-[#141e33] border border-white/10 text-white/70 hover:text-white hover:bg-white/10 transition text-lg"
+        title="Дальше"
+      >
+        ⏭
+      </button>
+    </div>
+  )
 
   // ── Leaderboard view ──────────────────────────────────────────────────────
   if (gamePhase === 'show_leaderboard') {
@@ -72,8 +113,9 @@ export default function HostGamePage() {
         <div className="max-w-lg mx-auto">
           <h2 className="text-2xl font-bold text-white text-center mb-1">🏆 Рейтинг</h2>
           <p className="text-white/30 text-sm text-center mb-6">
-            Авто-переход через 5 сек. или нажми сам
+            {paused ? '⏸ Пауза — авто-переход остановлен' : 'Авто-переход или управляй сам'}
           </p>
+          {controlBar}
           <div className="space-y-2 mb-8">
             {leaderboard.slice(0, 10).map((entry) => (
               <div
@@ -155,7 +197,10 @@ export default function HostGamePage() {
               <p className="text-white/70 text-sm">{currentExplanation}</p>
             </div>
           )}
-          <p className="text-white/30 text-xs text-center">Показывается участникам · авто-переход</p>
+          {controlBar}
+          <p className="text-white/30 text-xs text-center">
+            {paused ? '⏸ Пауза — авто-переход остановлен' : 'Показывается участникам · авто-переход'}
+          </p>
         </div>
       </div>
     )
@@ -205,8 +250,11 @@ export default function HostGamePage() {
         )}
 
         <p className="text-white/20 text-xs text-center mb-4">
-          Участники отвечают · таймер истекает автоматически
+          {paused
+            ? '⏸ Пауза — таймер остановлен'
+            : 'Участники отвечают · таймер истекает автоматически'}
         </p>
+        {controlBar}
         <button onClick={endGame} className="w-full py-2.5 text-white/20 hover:text-white/50 text-sm transition">
           Завершить игру досрочно
         </button>

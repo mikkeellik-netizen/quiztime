@@ -14,6 +14,10 @@ import { JwtService } from '@nestjs/jwt';
 export class GameGateway implements OnGatewayDisconnect {
   @WebSocketServer() server: Server;
   private timers = new Map<string, NodeJS.Timeout>();
+  // Текущая фаза авто-флоу для каждой игры (для ручного управления ведущим)
+  private phase = new Map<string, 'question' | 'answer' | 'leaderboard'>();
+  // Игры, поставленные ведущим на паузу (авто-переходы заморожены)
+  private paused = new Set<string>();
 
   constructor(
     private readonly gameService: GameService,
@@ -137,6 +141,94 @@ export class GameGateway implements OnGatewayDisconnect {
     await this.advanceToNext(client.data.sessionCode as string);
   }
 
+  /** Ведущий проматывает текущую фазу вперёд (вопрос → ответ → рейтинг → след. вопрос) */
+  @SubscribeMessage('host_skip')
+  async handleHostSkip(@ConnectedSocket() client: Socket) {
+    if (!client.data.isHost) return;
+    const code = client.data.sessionCode as string;
+    const ph = this.phase.get(code) ?? 'question';
+    this.clearAllTimers(code);
+    if (ph === 'question') await this.emitShowAnswer(code);
+    else if (ph === 'answer') await this.emitShowLeaderboard(code);
+    else await this.advanceToNext(code);
+  }
+
+  /** Ведущий возвращается к предыдущему вопросу */
+  @SubscribeMessage('host_prev_question')
+  async handleHostPrev(@ConnectedSocket() client: Socket) {
+    if (!client.data.isHost) return;
+    const code = client.data.sessionCode as string;
+    const idx = this.gameService.getCurrentIndex(code);
+    if (idx <= 0) return; // уже на первом вопросе
+    this.clearAllTimers(code);
+    const result = this.gameService.goToQuestion(code, idx - 1);
+    if (result && !result.finished) {
+      const payload = this.buildQuestionPayload(
+        result.question!,
+        result.questionIndex,
+        result.totalQuestions,
+        result.questionStartedAt,
+      );
+      this.server.to(code).emit('question_start', payload);
+      this.scheduleQuestionEnd(code, result.question!.timerSec);
+    }
+  }
+
+  /** Ведущий ставит игру на паузу — авто-переходы замораживаются */
+  @SubscribeMessage('host_pause')
+  async handleHostPause(@ConnectedSocket() client: Socket) {
+    if (!client.data.isHost) return;
+    const code = client.data.sessionCode as string;
+    this.paused.add(code);
+    this.clearAllTimers(code);
+    this.server
+      .to(code)
+      .emit('game_paused', { phase: this.phase.get(code) ?? 'question' });
+  }
+
+  /** Ведущий снимает паузу — продолжаем авто-флоу с текущей фазы */
+  @SubscribeMessage('host_resume')
+  async handleHostResume(@ConnectedSocket() client: Socket) {
+    if (!client.data.isHost) return;
+    const code = client.data.sessionCode as string;
+    if (!this.paused.has(code)) return;
+    this.paused.delete(code);
+    this.server.to(code).emit('game_resumed', {});
+
+    const ph = this.phase.get(code) ?? 'question';
+    if (ph === 'question') {
+      // Перезапускаем текущий вопрос со свежим таймером
+      const idx = this.gameService.getCurrentIndex(code);
+      const result = this.gameService.goToQuestion(code, idx);
+      if (result && !result.finished) {
+        const payload = this.buildQuestionPayload(
+          result.question!,
+          result.questionIndex,
+          result.totalQuestions,
+          result.questionStartedAt,
+        );
+        this.server.to(code).emit('question_start', payload);
+        this.scheduleQuestionEnd(code, result.question!.timerSec);
+      }
+    } else if (ph === 'answer') {
+      const { showAnswerSec } = this.gameService.getSettings(code);
+      this.clearTimer(`ans_${code}`);
+      const t = setTimeout(
+        () => this.emitShowLeaderboard(code),
+        Math.max(1, showAnswerSec) * 1000,
+      );
+      this.timers.set(`ans_${code}`, t);
+    } else {
+      const { showLeaderboardSec } = this.gameService.getSettings(code);
+      this.clearTimer(`lb_${code}`);
+      const t = setTimeout(
+        () => this.advanceToNext(code),
+        Math.max(1, showLeaderboardSec) * 1000,
+      );
+      this.timers.set(`lb_${code}`, t);
+    }
+  }
+
   @SubscribeMessage('end_game')
   async handleEndGame(@ConnectedSocket() client: Socket) {
     if (!client.data.isHost) return;
@@ -254,7 +346,9 @@ export class GameGateway implements OnGatewayDisconnect {
   // ─── INTERNAL FLOW ───────────────────────────────────────────────────────
 
   private scheduleQuestionEnd(code: string, timerSec: number) {
+    this.phase.set(code, 'question');
     this.clearTimer(`q_${code}`);
+    if (this.paused.has(code)) return; // на паузе авто-переход не планируем
     const t = setTimeout(async () => {
       await this.emitShowAnswer(code);
     }, timerSec * 1000);
@@ -265,6 +359,7 @@ export class GameGateway implements OnGatewayDisconnect {
     const result = this.gameService.getAnswerResult(code);
     if (!result) return;
 
+    this.phase.set(code, 'answer');
     this.server.to(code).emit('show_answer', {
       correctOptionIds: result.correctOptionIds,
       correctText: result.correctText ?? [],
@@ -272,6 +367,8 @@ export class GameGateway implements OnGatewayDisconnect {
       participantCount: result.participantCount,
       explanation: result.explanation ?? null,
     });
+
+    if (this.paused.has(code)) return; // на паузе остаёмся на экране ответа
 
     const { showAnswerSec } = this.gameService.getSettings(code);
     const delay = Math.max(1, showAnswerSec) * 1000;
@@ -284,8 +381,11 @@ export class GameGateway implements OnGatewayDisconnect {
   }
 
   private async emitShowLeaderboard(code: string) {
+    this.phase.set(code, 'leaderboard');
     const leaderboard = this.gameService.getLeaderboard(code);
     this.server.to(code).emit('show_leaderboard', { top: leaderboard });
+
+    if (this.paused.has(code)) return; // на паузе остаёмся на рейтинге
 
     const { showLeaderboardSec } = this.gameService.getSettings(code);
     const delay = Math.max(1, showLeaderboardSec) * 1000;
@@ -298,9 +398,7 @@ export class GameGateway implements OnGatewayDisconnect {
   }
 
   private async advanceToNext(code: string) {
-    this.clearTimer(`q_${code}`);
-    this.clearTimer(`ans_${code}`);
-    this.clearTimer(`lb_${code}`);
+    this.clearAllTimers(code);
 
     const result = this.gameService.nextQuestion(code);
     if (!result || result.finished) {
@@ -319,13 +417,19 @@ export class GameGateway implements OnGatewayDisconnect {
   }
 
   private async finishGame(code: string) {
-    this.clearTimer(`q_${code}`);
-    this.clearTimer(`ans_${code}`);
-    this.clearTimer(`lb_${code}`);
+    this.clearAllTimers(code);
+    this.phase.delete(code);
+    this.paused.delete(code);
 
     const leaderboard = this.gameService.getLeaderboard(code);
     await this.gameService.markFinished(code);
     this.server.to(code).emit('game_finished', { leaderboard });
+  }
+
+  private clearAllTimers(code: string) {
+    this.clearTimer(`q_${code}`);
+    this.clearTimer(`ans_${code}`);
+    this.clearTimer(`lb_${code}`);
   }
 
   private clearTimer(key: string) {

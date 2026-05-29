@@ -466,6 +466,39 @@ export class GameService {
     };
   }
 
+  /** Переход на произвольный вопрос по индексу (для ручного управления ведущим). */
+  goToQuestion(code: string, targetIndex: number) {
+    const session = this.sessions.get(code);
+    if (!session) return null;
+
+    if (targetIndex < 0) targetIndex = 0;
+    if (targetIndex >= session.questions.length) {
+      return {
+        finished: true as const,
+        question: null,
+        questionIndex: 0,
+        totalQuestions: 0,
+        questionStartedAt: 0,
+      };
+    }
+
+    session.currentQuestionIndex = targetIndex;
+    session.questionStartedAt = Date.now();
+    const question = session.questions[targetIndex];
+    return {
+      finished: false as const,
+      question,
+      questionIndex: targetIndex + 1,
+      totalQuestions: session.questions.length,
+      questionStartedAt: session.questionStartedAt,
+    };
+  }
+
+  /** Текущий индекс вопроса (0-based) либо -1, если игра ещё не началась. */
+  getCurrentIndex(code: string): number {
+    return this.sessions.get(code)?.currentQuestionIndex ?? -1;
+  }
+
   async markFinished(code: string) {
     const session = this.sessions.get(code);
     if (!session) return;
