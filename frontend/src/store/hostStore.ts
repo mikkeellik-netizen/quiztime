@@ -34,6 +34,7 @@ interface HostState {
   gamePhase: HostGamePhase
   token: string | null
   quizzes: Quiz[]
+  editingQuizId: string | null
   gameCode: string
   quizTitle: string
   participantCount: number
@@ -51,6 +52,7 @@ interface HostState {
   setGamePhase: (phase: HostGamePhase) => void
   setToken: (token: string) => void
   setQuizzes: (quizzes: Quiz[]) => void
+  setEditingQuizId: (id: string | null) => void
   setGame: (code: string, title: string) => void
   addParticipant: (displayName: string, count: number) => void
   setCurrentQuestion: (q: HostQuestion, index: number, total: number) => void
@@ -64,6 +66,7 @@ export const useHostStore = create<HostState>((set) => ({
   gamePhase: 'waiting',
   token: null,
   quizzes: [],
+  editingQuizId: null,
   gameCode: '',
   quizTitle: '',
   participantCount: 0,
@@ -81,6 +84,7 @@ export const useHostStore = create<HostState>((set) => ({
   setGamePhase: (gamePhase) => set({ gamePhase }),
   setToken: (token) => set({ token }),
   setQuizzes: (quizzes) => set({ quizzes: Array.isArray(quizzes) ? quizzes : [] }),
+  setEditingQuizId: (editingQuizId) => set({ editingQuizId }),
   setGame: (gameCode, quizTitle) => set({ gameCode, quizTitle, participantCount: 0, participantList: [] }),
   addParticipant: (displayName, count) =>
     set((s) => ({ participantList: [...s.participantList, displayName], participantCount: count })),

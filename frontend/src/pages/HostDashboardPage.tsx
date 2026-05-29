@@ -7,7 +7,7 @@ import { clearSavedToken } from '../api/auth'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export default function HostDashboardPage() {
-  const { token, quizzes: rawQuizzes, setPhase, setGame, setQuizzes } = useHostStore()
+  const { token, quizzes: rawQuizzes, setPhase, setGame, setQuizzes, setEditingQuizId } = useHostStore()
   const quizzes = Array.isArray(rawQuizzes) ? rawQuizzes : []
   const [loading, setLoading] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(true)
@@ -138,7 +138,7 @@ export default function HostDashboardPage() {
             📊
           </button>
           <button
-            onClick={() => setPhase('builder')}
+            onClick={() => { setEditingQuizId(null); setPhase('builder') }}
             className="px-4 py-2 rounded-xl bg-[#7c6ded] hover:bg-[#6a5bd4] text-white font-bold text-sm transition"
           >
             + Создать
@@ -200,7 +200,7 @@ export default function HostDashboardPage() {
               Нажми «+ Создать» чтобы составить первый квиз
             </p>
             <button
-              onClick={() => setPhase('builder')}
+              onClick={() => { setEditingQuizId(null); setPhase('builder') }}
               className="mt-6 px-6 py-3 rounded-xl bg-[#7c6ded] hover:bg-[#6a5bd4] text-white font-bold transition"
             >
               + Создать квиз
@@ -221,6 +221,14 @@ export default function HostDashboardPage() {
                       {quiz.roundCount !== 1 ? 'а' : ''}
                     </p>
                   </div>
+                  <button
+                    onClick={() => { setEditingQuizId(quiz.id); setPhase('builder') }}
+                    disabled={loading !== null}
+                    className="shrink-0 w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-sm transition disabled:opacity-50"
+                    title="Редактировать"
+                  >
+                    ✏️
+                  </button>
                   <button
                     onClick={() => createSession(quiz.id, quiz.title)}
                     disabled={loading !== null}

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { QuizService } from './quiz.service';
 import { QuizImportResult } from '../import/dto/import-result.dto';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard';
@@ -39,5 +39,15 @@ export class QuizController {
     @CurrentUser() user: { id: string },
   ) {
     return this.quizService.createFromImport(user.id, body.title, body.data);
+  }
+
+  /** PUT /api/quizzes/:id — перезаписать существующий квиз */
+  @Put(':id')
+  updateQuiz(
+    @Param('id') id: string,
+    @Body() body: CreateFromImportBody,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.quizService.updateFromImport(id, user.id, body.title, body.data);
   }
 }

@@ -94,10 +94,12 @@ function clearDraft() {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function QuizBuilderPage() {
-  const { setPhase, setQuizzes } = useHostStore()
+  const { setPhase, setQuizzes, editingQuizId, setEditingQuizId } = useHostStore()
+  const isEditing = !!editingQuizId
   const [title, setTitle] = useState('')
   const [rounds, setRounds] = useState<BuildRound[]>([makeRound(1)])
   const [saving, setSaving] = useState(false)
+  const [loadingQuiz, setLoadingQuiz] = useState(isEditing)
   const [error, setError] = useState('')
   const [editingQ, setEditingQ] = useState<{ roundId: string; qId: string } | null>(null)
   const [draftBanner, setDraftBanner] = useState(false)
@@ -105,28 +107,73 @@ export default function QuizBuilderPage() {
   // Когда квиз успешно сохранён — НЕ восстанавливаем черновик на unmount
   const savedRef = useRef(false)
 
-  // Check for existing draft on mount
+  // Режим редактирования: загружаем существующий квиз и заполняем форму
   useEffect(() => {
+    if (!editingQuizId) return
+    let cancelled = false
+    ;(async () => {
+      setLoadingQuiz(true)
+      try {
+        const res = await apiClient.get(`/api/quizzes/${editingQuizId}`)
+        if (cancelled) return
+        const quiz = res.data
+        setTitle(quiz?.title ?? '')
+        const mapped: BuildRound[] = Array.isArray(quiz?.rounds)
+          ? quiz.rounds.map((r: any) => ({
+              id: uid(),
+              title: r.title ?? '',
+              questions: (Array.isArray(r.questions) ? r.questions : []).map((q: any) => ({
+                id: uid(),
+                type: (q.type ?? 'SINGLE') as QType,
+                text: q.text ?? '',
+                timerSec: q.timerSec ?? 20,
+                baseScore: q.baseScore ?? 100,
+                explanation: q.explanation ?? '',
+                options: (Array.isArray(q.options) ? q.options : []).map((o: any) => ({
+                  id: uid(),
+                  text: o.text ?? '',
+                  isCorrect: !!o.isCorrect,
+                })),
+              })),
+            }))
+          : []
+        setRounds(mapped.length ? mapped : [makeRound(1)])
+      } catch (e: any) {
+        if (!cancelled) setError(getErrorMessage(e, 'Не удалось загрузить квиз'))
+      } finally {
+        if (!cancelled) setLoadingQuiz(false)
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingQuizId])
+
+  // Check for existing draft on mount (только при создании нового квиза)
+  useEffect(() => {
+    if (isEditing) return
     const draft = loadDraft()
     if (draft && (draft.title || draft.rounds.some(r => r.questions.some(q => q.text)))) {
       setDraftBanner(true)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Keep latest title/rounds in a ref so we can flush-save on unmount
   const latestRef = useRef({ title, rounds })
   latestRef.current = { title, rounds }
 
-  // Auto-save draft on every change (debounced 800ms)
+  // Auto-save draft on every change (debounced 800ms) — только для нового квиза
   useEffect(() => {
+    if (isEditing) return
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current)
     autoSaveRef.current = setTimeout(() => saveDraft(title, rounds), 800)
     return () => { if (autoSaveRef.current) clearTimeout(autoSaveRef.current) }
-  }, [title, rounds])
+  }, [title, rounds, isEditing])
 
-  // Flush-save the draft when leaving the builder (unmount)
+  // Flush-save the draft when leaving the builder (unmount) — только для нового квиза
   useEffect(() => {
     return () => {
+      if (isEditing) return // редактирование существующего квиза не сохраняем в черновик
       if (savedRef.current) return // квиз сохранён — черновик не нужен
       const { title: t, rounds: r } = latestRef.current
       // Сохраняем только если есть что сохранять
@@ -134,10 +181,16 @@ export default function QuizBuilderPage() {
         saveDraft(t, r)
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Явный выход «Назад» — сразу сохраняем черновик и уходим
+  // Явный выход «Назад»
   const goBack = () => {
+    if (isEditing) {
+      setEditingQuizId(null)
+      setPhase('dashboard')
+      return
+    }
     const { title: t, rounds: r } = latestRef.current
     if (t.trim() || r.some(rd => rd.questions.some(q => q.text.trim()))) {
       saveDraft(t, r)
@@ -217,12 +270,17 @@ export default function QuizBuilderPage() {
         warnings: [],
       }
 
-      await apiClient.post('/api/quizzes/import', { title: title.trim(), data: importData })
+      if (isEditing && editingQuizId) {
+        await apiClient.put(`/api/quizzes/${editingQuizId}`, { title: title.trim(), data: importData })
+      } else {
+        await apiClient.post('/api/quizzes/import', { title: title.trim(), data: importData })
+      }
 
       const res = await apiClient.get('/api/quizzes')
       setQuizzes(asArray(res.data))
       savedRef.current = true
-      clearDraft()
+      if (isEditing) setEditingQuizId(null)
+      else clearDraft()
       setPhase('dashboard')
     }
 
@@ -246,6 +304,14 @@ export default function QuizBuilderPage() {
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
+  if (loadingQuiz) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-white/40">
+        Загрузка квиза...
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen px-4 py-6 pb-24">
       <div className="max-w-lg mx-auto">
@@ -257,7 +323,7 @@ export default function QuizBuilderPage() {
           >
             ←
           </button>
-          <h1 className="text-xl font-bold text-white flex-1">Новый квиз</h1>
+          <h1 className="text-xl font-bold text-white flex-1">{isEditing ? 'Редактировать квиз' : 'Новый квиз'}</h1>
           <button
             onClick={save}
             disabled={saving}

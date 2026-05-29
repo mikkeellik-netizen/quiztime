@@ -88,60 +88,108 @@ export class QuizService {
         },
       });
 
-      for (let ri = 0; ri < data.rounds.length; ri++) {
-        const ir = data.rounds[ri];
+      await this.writeRounds(tx, quiz.id, data);
 
-        const round = await tx.round.create({
+      return this.findFullQuiz(tx, quiz.id);
+    });
+  }
+
+  /**
+   * Полностью перезаписывает существующий квиз данными из конструктора/импорта.
+   * Старые раунды/вопросы/варианты удаляются (каскадно) и создаются заново.
+   */
+  async updateFromImport(
+    quizId: string,
+    hostUserId: string,
+    title: string,
+    data: QuizImportResult,
+  ) {
+    // Проверка прав владельца (бросит 403/404 при необходимости)
+    await this.getById(quizId, hostUserId);
+
+    // Нельзя редактировать квиз, по которому уже шли игры (ответы участников
+    // ссылаются на вопросы и блокируют удаление). Защищаемся явной проверкой.
+    const sessionCount = await this.prisma.gameSession.count({
+      where: { quizId },
+    });
+    if (sessionCount > 0) {
+      throw new ForbiddenException(
+        'Этот квиз уже использовался в играх — редактирование недоступно. Создайте копию.',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Каскад: Round → Question → AnswerOption
+      await tx.round.deleteMany({ where: { quizId } });
+      await tx.quiz.update({ where: { id: quizId }, data: { title } });
+
+      await this.writeRounds(tx, quizId, data);
+
+      return this.findFullQuiz(tx, quizId);
+    });
+  }
+
+  /** Создаёт раунды/вопросы/варианты для квиза внутри транзакции. */
+  private async writeRounds(
+    tx: any,
+    quizId: string,
+    data: QuizImportResult,
+  ) {
+    for (let ri = 0; ri < data.rounds.length; ri++) {
+      const ir = data.rounds[ri];
+
+      const round = await tx.round.create({
+        data: {
+          quizId,
+          title: ir.title,
+          orderIndex: ri + 1,
+          isFinal: ri === data.rounds.length - 1,
+        },
+      });
+
+      for (let qi = 0; qi < ir.questions.length; qi++) {
+        const iq = ir.questions[qi];
+
+        const question = await tx.question.create({
           data: {
-            quizId: quiz.id,
-            title: ir.title,
-            orderIndex: ri + 1,
-            isFinal: ri === data.rounds.length - 1,
+            roundId: round.id,
+            type: iq.type,
+            text: iq.text,
+            timerSec: iq.timerSec,
+            baseScore: iq.baseScore,
+            orderIndex: qi + 1,
+            explanation: iq.explanation ?? null,
           },
         });
 
-        for (let qi = 0; qi < ir.questions.length; qi++) {
-          const iq = ir.questions[qi];
-
-          const question = await tx.question.create({
+        for (const opt of iq.options) {
+          await tx.answerOption.create({
             data: {
-              roundId: round.id,
-              type: iq.type,
-              text: iq.text,
-              timerSec: iq.timerSec,
-              baseScore: iq.baseScore,
-              orderIndex: qi + 1,
-              explanation: iq.explanation ?? null,
+              questionId: question.id,
+              text: opt.text,
+              isCorrect: opt.isCorrect,
+              orderIndex: opt.orderIndex,
             },
           });
-
-          for (const opt of iq.options) {
-            await tx.answerOption.create({
-              data: {
-                questionId: question.id,
-                text: opt.text,
-                isCorrect: opt.isCorrect,
-                orderIndex: opt.orderIndex,
-              },
-            });
-          }
         }
       }
+    }
+  }
 
-      return tx.quiz.findUnique({
-        where: { id: quiz.id },
-        include: {
-          rounds: {
-            orderBy: { orderIndex: 'asc' },
-            include: {
-              questions: {
-                orderBy: { orderIndex: 'asc' },
-                include: { options: { orderBy: { orderIndex: 'asc' } } },
-              },
+  private findFullQuiz(tx: any, quizId: string) {
+    return tx.quiz.findUnique({
+      where: { id: quizId },
+      include: {
+        rounds: {
+          orderBy: { orderIndex: 'asc' },
+          include: {
+            questions: {
+              orderBy: { orderIndex: 'asc' },
+              include: { options: { orderBy: { orderIndex: 'asc' } } },
             },
           },
         },
-      });
+      },
     });
   }
 }
